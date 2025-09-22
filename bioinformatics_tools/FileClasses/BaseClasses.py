@@ -2,9 +2,153 @@ import gzip
 import mimetypes
 import pathlib
 import sys
+import inspect
+import typer
 
 from bioinformatics_tools.caragols import clix
 from bioinformatics_tools.caragols.clix import LOGGER
+
+MAIN_EXECUTABLE_NAME='dane' # TODO: This will have to change when we have more executables
+
+def get_global_cli_parameters():
+    """
+    Returns a list of global CLI parameters that should be available to all commands.
+    Each parameter is a tuple of (name, annotation, default_value).
+    """
+    return [
+        (
+            'config_file',
+            str,
+            typer.Option(None, "--config-file", help="Path to configuration file")
+        ),
+        # Add more global parameters here as needed:
+        # (
+        #     'verbose_logging',
+        #     bool,
+        #     typer.Option(False, "--verbose-logging", help="Enable verbose logging")
+        # ),
+        # (
+        #     'dry_run',
+        #     bool,
+        #     typer.Option(False, "--dry-run", help="Show what would be done without executing")
+        # ),
+    ]
+
+def add_global_parameters_to_signature(sig, global_params):
+    """
+    Add global parameters to a function signature.
+    """
+    new_params = []
+
+    # Add original function parameters first
+    for param_name, param in sig.parameters.items():
+        if param_name not in ["self", "barewords", "kwargs"]:
+            new_params.append(param.replace())
+
+    # Add global parameters as keyword-only at the end
+    for param_name, param_type, param_default in global_params:
+        global_param = inspect.Parameter(
+            param_name,
+            inspect.Parameter.KEYWORD_ONLY,
+            annotation=param_type,
+            default=param_default
+        )
+        new_params.append(global_param)
+
+    return inspect.Signature(parameters=new_params) if new_params else sig
+
+def command(name: str | None = None, aliases: list[str] | None = None):
+    """
+    Decorator that creates a typer app for a method and handles --help integration.
+    """
+    def deco(fn):
+        cmd_name = name or fn.__name__.removeprefix("do_").replace("_", " ")
+        cmd_aliases = aliases or []
+
+        # Create typer app for this command
+        app = typer.Typer()
+
+        # Get function signature and create typer wrapper
+        sig = inspect.signature(fn)
+
+        def create_typer_command():
+            # Get global parameters from shared location
+            global_params = get_global_cli_parameters()
+            global_param_names = [param[0] for param in global_params]
+
+            # Build dynamic function with global parameters
+            global_param_args = ", ".join([
+                f"{param_name}: {param_type.__name__} = {param_name}_default"
+                for param_name, param_type, param_name_default in global_params
+            ])
+
+            # Create function dynamically with correct signature, including global args
+            def typer_cmd(*args, **kwargs):
+                """Typer wrapper for the original function"""
+                # Remove global args that aren't part of the original function
+                func_kwargs = {k: v for k, v in kwargs.items() if k not in global_param_names}
+                # Call original function, passing None for self and barewords
+                return fn(None, None, *args, **func_kwargs)
+
+            # Set the function signature to include both original params and global args
+            typer_cmd.__signature__ = add_global_parameters_to_signature(sig, global_params)
+
+            # Copy docstring
+            typer_cmd.__doc__ = fn.__doc__
+
+            # Copy type annotations including global args
+            typer_cmd.__annotations__ = {}
+            for param_name, param_type, _ in global_params:
+                typer_cmd.__annotations__[param_name] = param_type
+
+            for param_name, param in sig.parameters.items():
+                if param_name not in ["self", "barewords", "kwargs"]:
+                    typer_cmd.__annotations__[param_name] = param.annotation if param.annotation != inspect.Parameter.empty else str
+
+            return typer_cmd
+
+        # Register command with typer
+        typer_command = create_typer_command()
+        app.command()(typer_command)
+
+        # Attach typer app to function
+        fn.__typer_app__ = app
+        fn.__cmd_name__ = cmd_name
+        fn.__cmd_aliases__ = cmd_aliases
+
+        # Create wrapper that detects --help
+        def wrapper(self, barewords, **kwargs):
+            import sys
+
+            # Check for --help in arguments
+            if '--help' in sys.argv or (barewords and '--help' in str(barewords)):
+                try:
+                    app(["--help"])
+                except SystemExit:
+                    pass
+
+                # Option 1: Return a proper success report
+                if hasattr(self, 'succeeded'):
+                    self.succeeded(msg=f"Help displayed for {cmd_name} command", dex={"action": "help", "command": cmd_name})
+
+                # Option 2: Uncomment below to suppress all report output for --help
+                # import sys
+                # sys.exit(0)
+
+                return
+
+            # Normal execution
+            return fn(self, barewords, **kwargs)
+
+        # Copy attributes to wrapper
+        wrapper.__typer_app__ = app
+        wrapper.__cmd_name__ = cmd_name
+        wrapper.__cmd_aliases__ = cmd_aliases
+        wrapper.__doc__ = fn.__doc__
+        wrapper.__name__ = fn.__name__
+
+        return wrapper
+    return deco
 
 class BioBase(clix.App):
     '''
@@ -15,11 +159,16 @@ class BioBase(clix.App):
 
     def __init__(self, file=None, detect_mode="medium", filetype=None) -> None:
         self.detect_mode = detect_mode
-        super().__init__(run_mode="cli", name="fileflux", filetype=filetype)
+        super().__init__(run_mode="cli", name=MAIN_EXECUTABLE_NAME, filetype=filetype)
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug(f'\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n{self.conf.show()}')
         self.file = self.conf.get('file', None)
-        LOGGER.info(f'self.comarfs: {self.comargs}\nself.actions: {self.actions}\nself.barewords: {self.barewords}')
+        LOGGER.info(
+    "🔍 Parsed Command Args:\n"
+    f"  comargs   : {self.comargs}\n"
+    f"  actions   : {self.actions}\n"
+    # f"  barewords : {self.barewords}"
+)
 
         if not self.matched:
             LOGGER.info(self.report.formatted(self.form)+'\n')
@@ -29,13 +178,19 @@ class BioBase(clix.App):
             else:
                 sys.exit(0)
 
-        if 'help' in self.matched[0]:  # If just running help, don't need to d
+        # Check for --help before file validation
+        if '--help' in sys.argv:
+            # Skip file validation for --help
+            self.file_path = None
+            self.file_name = None
+        elif 'help' in self.matched[0]:  # If just running help, don't need to d
+            print('Running')
             self.run()
         elif self.file:
             self.file_path = pathlib.Path(self.file)
             self.file_name = self.file_path.name
         else:
-            message = f'ERROR: No file provided. Please add file via: $ python3 main.py file: example.fasta'
+            message = f'ERROR: No file provided. Please add file via: $ dane file: example.fasta'
             self.failed(msg=f"Total sequences: {message}", dex=message)
             LOGGER.info(self.report.formatted(self.form) + '\n')
             self.done()
@@ -51,6 +206,10 @@ class BioBase(clix.App):
         For example, if a file comes in as myfile.fg, it'll be renamed to myfile.fastq.gz
         Or, if a file is fastq.txt, it'll be renamed to myfile.fastq.gz
         '''
+        if self.file_path is None:
+            # Return a dummy value for --help mode
+            return "dummy-filename.txt"
+
         suffixes = self.file_path.suffixes
         self.basename = self.file_path.stem
         if suffixes and suffixes[-1] in self.known_compressions:
@@ -65,6 +224,10 @@ class BioBase(clix.App):
         '''
         Is there a known extension of the file?
         '''
+        if self.file_path is None:
+            # Return True for --help mode to avoid validation issues
+            return True
+
         suffixes = self.file_path.suffixes
         if suffixes[-1] in self.known_compressions:
             return len(suffixes) > 1 and suffixes[-2] in self.known_extensions
@@ -72,6 +235,10 @@ class BioBase(clix.App):
             return suffixes[-1] in self.known_extensions
     
     def is_valid(self) -> bool:
+        if self.file_path is None:
+            # Return True for --help mode to avoid validation issues
+            return True
+
         _, encoding = mimetypes.guess_type(self.file_path)
 
         # Here, open up the file and validate it to determine if it is indeed the correct file type

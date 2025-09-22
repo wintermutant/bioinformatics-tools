@@ -44,12 +44,14 @@ setup(
         'pandas',
         'pyyaml==6.*',
         'python-json-logger==2.0.7',
+        'typer',
     ],
     python_requires='>=3.11',
     entry_points={
         'console_scripts': [
             'dane=bioinformatics_tools.FileClasses.main:cli',
-            'fasta-tools=bioinformatics_tools.fastaTools.main:main'
+            # 'fasta-tools=bioinformatics_tools.fastaTools.main:main'
+            'misc=bioinformatics_tools.miscTools.main:cli'
             ],
         }
 )

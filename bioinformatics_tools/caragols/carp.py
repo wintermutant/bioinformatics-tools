@@ -14,11 +14,11 @@ import yaml
 
 class ReplyStatus(tuple):
     DEFAULT_CATEGORY_GLOSS = {
-        '1': 'FYI',
-        '2': 'Success',
-        '3': 'Inconclusive',
-        '4': 'Failure',
-        '5': 'Fault'
+        '1': 'ℹ️ FYI',
+        '2': '✅ Success',
+        '3': '❔ Inconclusive',
+        '4': '❌ Failure',
+        '5': '💥 Fault'
     }
 
     DEFAULT_CODE_GLOSS = {
@@ -130,7 +130,7 @@ class Report:
         title_stanza = "# {}".format(title)
         status_stanza = "## Status\n{}: {}".format(
             self.status.code, self.status.gloss)
-        response_stanza = "## Response\n{}".format(str(self.body))
+        response_stanza = "## Response 💬\n{}".format(str(self.body))
 
         stanzas = [title_stanza, status_stanza, response_stanza]
 

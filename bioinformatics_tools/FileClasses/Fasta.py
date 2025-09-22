@@ -1,7 +1,8 @@
 import gzip
 import pathlib
+import typer
 
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase
+from bioinformatics_tools.FileClasses.BaseClasses import BioBase, command
 
 from bioinformatics_tools.caragols.clix import LOGGER
 
@@ -172,7 +173,8 @@ class Fasta(BioBase):
         data = [v[1] for k, v in self.fastaKey.items()]
         self.succeeded(msg=f"All sequences:\n{data}", dex=data)
     
-    def do_gc_content(self, barewords, **kwargs):
+    @command(aliases=['gc per', 'per gc'])
+    def do_gc_content(self, barewords, something: str = 'hi', **kwargs):
         '''Return the GC content of each sequence in the fasta file'''
         gcContent = {}
         for cnt, items in self.fastaKey.items():
@@ -183,8 +185,14 @@ class Fasta(BioBase):
         data = gcContent
         self.succeeded(msg=f"GC Content per entry:\n{data}", dex=data)
 
-    def do_gc_content_total(self, barewords, **kwargs):
-        '''Return the total GC content of the fasta file'''
+    @command(aliases=['gc total', 'total gc'])
+    def do_gc_content_total(
+        self,
+        barewords,
+        precision: int = typer.Option(2, "--precision", "-p", help="Decimal precision for results"),
+        **kwargs
+    ):
+        '''Return the average GC content across all sequences in the fasta file'''
         values = []
         for _, items in self.fastaKey.items():
             seq = items[1].upper()
@@ -196,21 +204,21 @@ class Fasta(BioBase):
             return data
         self.succeeded(msg=f"Total GC Content: {data}", dex=data)
 
-    def do_total_seqs(self, barewords, **kwargs):
-        '''
-        Return the total number of sequences (entries) in the fasta file.
-
-        Parameters: None
-
-        Returns:
-            int: The total number of sequences.
-        '''
+    @command(aliases=['count seqs', 'num sequences'])
+    def do_total_seqs(
+        self,
+        barewords,
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
+        **kwargs
+    ):
+        '''Return the total number of sequences (entries) in the fasta file.'''
         data = len(self.fastaKey.keys())
         if kwargs.get('internal_call', False):
             return data
         self.succeeded(msg=f"Total sequences: {data}", dex=data)
     
-    def do_total_seq_length(self, barewords, **kwargs):
+    @command(aliases=['quick key', 'no way jose'])
+    def do_total_seq_length(self, ignore_size: int = 0, **kwargs):
         '''Return the total length of all sequences in the fasta file'''
         data = sum([len(v[1]) for k, v in self.fastaKey.items() ])
         if kwargs.get('internal_call', False):
@@ -219,8 +227,15 @@ class Fasta(BioBase):
 
 
     # Misc. Actions and Functionality
-    def do_filter_seqlength(self, barewords, **kwargs):
-        '''Filter the sequences by length, default is 2000'''
+    @command(aliases=['filter length', 'filter'])
+    def do_filter_seqlength(
+        self,
+        barewords,
+        min_length: int = typer.Option(2000, "--min-length", "-l", help="Minimum sequence length to keep"),
+        output_file: str = typer.Option(None, "--output", "-o", help="Output file path"),
+        **kwargs
+    ):
+        '''Filter the sequences by length, keeping only sequences above the minimum length'''
         seqlength = self.conf.get('seqlen', 2000)
         output = self.conf.get('output', None)
         if not output:
@@ -235,7 +250,14 @@ class Fasta(BioBase):
         msg = f'Processed with seqlength of {seqlength} and wrote to output: {output}'
         self.succeeded(msg=f"{msg}", dex=data)
     
-    def do_n_largest_seqs(self, barewords, **kwargs):
+    @command(aliases=['largest', 'top seqs'])
+    def do_n_largest_seqs(
+        self,
+        barewords,
+        n: int = typer.Option(10, "--count", "-n", help="Number of largest sequences to return"),
+        output_file: str = typer.Option(None, "--output", "-o", help="Output file path"),
+        **kwargs
+    ):
         '''Return the n largest sequences in the fasta file'''
         n = int(self.conf.get('n', 10))
         output = self.conf.get('output', None)
@@ -258,8 +280,15 @@ class Fasta(BioBase):
             return data
         self.succeeded(msg=f"Total sequence length: {data}", dex=data)
     
-    def do_search_subsequence(self, barewords, **kwargs):
-        '''Search for a subsequence in the fasta file'''
+    @command(aliases=['search', 'find sequence'])
+    def do_search_subsequence(
+        self,
+        barewords,
+        subsequence: str = typer.Argument(..., help="DNA/RNA subsequence to search for"),
+        case_sensitive: bool = typer.Option(False, "--case-sensitive", help="Perform case-sensitive search"),
+        **kwargs
+    ):
+        '''Search for a subsequence in all sequences of the fasta file'''
         subsequence = self.conf.get('subsequence', None)
         if not subsequence:
             self.failed(msg='No subsequence provided. Please use subsequence: <subsequence>')
@@ -286,4 +315,6 @@ class Fasta(BioBase):
         if not ascending:
             return dict(sorted(self.fastaKey.items(), key=lambda item: item[1][0].lower()))
         return dict(sorted(self.fastaKey.items(), key=lambda item: item[1][0].lower()), reverse=True)
-    
+
+
+# print(f'Signatures: {DECORATED}')

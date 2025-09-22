@@ -18,6 +18,7 @@ RGB thumbnail ^defaults ^myconf landingzone: $HOME/APPF/LZ
     the line.
 """
 import argparse
+import inspect
 from pathlib import Path
 import sys
 import os.path
@@ -60,6 +61,10 @@ class App:
         # ---------------------------------------------------------------------------
         self.configure()
 
+        # ---------------------------------------------------------------------------
+        # -- setup command line argparser to show help messages nicely.             |
+        # ---------------------------------------------------------------------------
+        self.setup_help()
         # -----------------------------------------------------------------------
         # -- the default dispatcher is loaded by reading self for .do_* methods |
         # -----------------------------------------------------------------------
@@ -72,7 +77,6 @@ class App:
                     self.dispatches.append((tokens, action))
 
         tokens = [' '.join(v[0]) for v in self.dispatches]
-        LOGGER.debug(f'Dispatches found:\n{tokens}')
 
         # -----------------------------------------------------------------------
         # -- Perform the app.run() to setup the app                             |
@@ -123,13 +127,24 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
     def _passed_config_file(cls) -> Optional[Path]:
         """Hack to parse a command line arg for a file path to a configuration file
         """
-        parser = argparse.ArgumentParser(prog='hack')
+        parser = argparse.ArgumentParser(prog='hack', add_help=False)
         parser.add_argument('--config-file', type=Path)
         known_args = parser.parse_known_args()[0]
         try:
             return known_args.config_file.expanduser().absolute()
         except AttributeError:
             return None
+        
+    def setup_help(self):
+        pass
+    
+    def _iter_commands(self):
+        # only methods explicitly decorated (have __cmd_name__)
+        for _, fn in inspect.getmembers(self, predicate=callable):
+            if getattr(fn, "__cmd_name__", None):
+                yield fn
+    
+
 
     @classmethod
     def configuration_file(cls) -> Path:
@@ -222,7 +237,7 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
         pass
     
     def run(self):
-        LOGGER.debug('\n\n(v) Running the actual executable')
+        LOGGER.debug(f'\n\n(v) Running the actual executable --> {self.action}')
         xtraopts = self.xtraopts
         self.action(self.barewords, **xtraopts)
         # --------------------------------------------------
@@ -235,11 +250,11 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
         if getattr(self, 'report', None) is None:
             self.report = self.crashed("No report returned by action!")
 
-        form = self.conf.get('report.form', 'prose')
+        form = self.conf.get('report.form', 'csv') # Change report form
 
         if self.run_mode == "cli":
             # Below is the culprite for the duplication!
-            LOGGER.info('\n' + self.report.formatted(form))
+            LOGGER.info('📄 Report Generated:\n' + self.report.formatted(form))
             self.done()
             if self.report.status.indicates_failure:
                 sys.exit(1)
@@ -288,7 +303,7 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
 
         LOGGER.debug(f'\n\n(iv) Matching & Configuration Update. {matched=}')
         if matched:
-            tokens, action, barewords, xtraopts = matched
+            tokens, action, barewords, xtraopts = matched  # Where the help or whatever action gets recognized
 
             if explaining:
                 self.report = self.do_explain(
@@ -398,10 +413,12 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
     def do_help(self, barewords, **kwargs):
         """Show all command patterns and their help messages"""
         doclines = []
+        print(f'Dispatches:\n{self.dispatches}')
         for cnt, actionable in enumerate(sorted(self.dispatches)):
             tokens, action = actionable
             humanable = " ".join(tokens)
             doclines.append(f'{cnt}: \033[92m $ {self.name} {humanable} type: {self.filetype} file: example.{self.filetype}\033[0m')
+            # Below, we want the docstring to be added with a decorator function
             if action.__doc__:
                 for line in action.__doc__.strip().split('\n'):
                     doclines.append(line)

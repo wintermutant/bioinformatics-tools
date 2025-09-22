@@ -24,9 +24,9 @@ from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
 package_spec = importlib.util.find_spec("bioinformatics_tools.FileClasses")
 package_path = package_spec.submodule_search_locations[0]
 
-raw_programs = [f.rsplit('.', 1)[0] for f in os.listdir(package_path) if f.endswith('.py') and not f.startswith('__')]
-raw_programs = [x for x in raw_programs if x != 'main']
-avail_programs = [(f, f.lower()) for f in raw_programs]
+real_py_class_filenames = [f.rsplit('.', 1)[0] for f in os.listdir(package_path) if f.endswith('.py') and not f.startswith('__')]
+real_py_class_filenames = [x for x in real_py_class_filenames if x != 'main']
+file_type_identifiers = [f for f in real_py_class_filenames]
 
 def find_file_type(args: list) -> None | str:
     '''
@@ -43,6 +43,7 @@ def find_file_type(args: list) -> None | str:
 
 
 def cli():
+    # Step 0 - Configure Logging
     config_logging_for_app()
     startup_info = {
         'cwd': Path.cwd(),
@@ -52,19 +53,21 @@ def cli():
     }
     LOGGER.debug(f'\nStartup:\n{startup_info}', extra={'startup_info': startup_info}) # user, cwd, sys.argv, app version
 
+    # Step 1 - Parse command line for "type"
     matched = False
     type_ = find_file_type(sys.argv)
     LOGGER.debug(f'Recognize file type: {type_}')
+    # Step 2 - Parse command line for "available programs"
     if type_:
-        for program, program_lower in avail_programs:
-            if type_ == program or type_ == program_lower:
+        for type_identifier in file_type_identifiers:
+            if type_.lower() == type_identifier.lower():
                 matched = True
-                LOGGER.debug(f'Matched {program} or {program_lower} to {type_}')
+                LOGGER.debug(f'Matched {type_identifier} to {type_}')
                 LOGGER.info(f'✅ Recognized type ({type_}) and matched to module')
-                import_string = f"bioinformatics_tools.FileClasses.{program}"
-                LOGGER.info(f'Importing {import_string}')
+                import_string = f"bioinformatics_tools.FileClasses.{type_identifier}"
+                LOGGER.info(f'📦 Importing {import_string}')
                 current_module = importlib.import_module(import_string)
-                CurrentClass = getattr(current_module, program)
+                CurrentClass = getattr(current_module, type_identifier)
                 
                 # Controlling the execution of the class
                 data = CurrentClass()  # Shows config
@@ -81,13 +84,13 @@ def cli():
     else:
         if any(arg in sys.argv for arg in ("help", "Help", "HELP")):
             LOGGER.info('🆘 Help requested')
-            LOGGER.info('The following file types are recognized and can be specified via the command line\n\033[92mfileflux type: <file_type>\033[0m')
+            LOGGER.info('The following file types are recognized and can be specified via the command line\n\033[92mdane type: <file_type>\033[0m')
             help_string = 'Available file types:\n'
-            for program, program_lower in avail_programs:
-                help_string += f'  {program} or {program_lower}\n'
+            for type_identifier in file_type_identifiers:
+                help_string += f'  {type_identifier}\n'
             LOGGER.info(help_string)
         else:
-            LOGGER.error(f'No file type provided. Please specify via the command line\nfileflux type: <file_type>\nExiting...')
+            LOGGER.error(f'No file type provided. Please specify via the command line\ndane type: <file_type>\nExiting...')
 
 
 if __name__ == "__main__":
