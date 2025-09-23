@@ -65,7 +65,7 @@ def cli():
                 LOGGER.debug(f'Matched {type_identifier} to {type_}')
                 LOGGER.info(f'✅ Recognized type ({type_}) and matched to module')
                 import_string = f"bioinformatics_tools.FileClasses.{type_identifier}"
-                LOGGER.info(f'📦 Importing {import_string}')
+                LOGGER.debug(f'📦 Importing {import_string}')
                 current_module = importlib.import_module(import_string)
                 CurrentClass = getattr(current_module, type_identifier)
                 

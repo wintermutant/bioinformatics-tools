@@ -43,7 +43,12 @@ def add_global_parameters_to_signature(sig, global_params):
     # Add original function parameters first
     for param_name, param in sig.parameters.items():
         if param_name not in ["self", "barewords", "kwargs"]:
-            new_params.append(param.replace())
+            # Extract actual default value from typer.Option objects
+            default_value = param.default
+            if hasattr(default_value, 'default'):
+                default_value = default_value.default
+
+            new_params.append(param.replace(default=default_value))
 
     # Add global parameters as keyword-only at the end
     for param_name, param_type, param_default in global_params:
@@ -57,11 +62,14 @@ def add_global_parameters_to_signature(sig, global_params):
 
     return inspect.Signature(parameters=new_params) if new_params else sig
 
-def command(name: str | None = None, aliases: list[str] | None = None):
+def command(fn_or_name=None, *, aliases: list[str] | None = None):
     """
     Decorator that creates a typer app for a method and handles --help integration.
+    Supports both @command and @command() syntax.
     """
     def deco(fn):
+        # Handle case where decorator is used without parentheses
+        name = fn_or_name if isinstance(fn_or_name, str) else None
         cmd_name = name or fn.__name__.removeprefix("do_").replace("_", " ")
         cmd_aliases = aliases or []
 
@@ -116,7 +124,7 @@ def command(name: str | None = None, aliases: list[str] | None = None):
         fn.__cmd_name__ = cmd_name
         fn.__cmd_aliases__ = cmd_aliases
 
-        # Create wrapper that detects --help
+        # Create wrapper that handles typer help and filters CLIX parameters
         def wrapper(self, barewords, **kwargs):
             import sys
 
@@ -127,18 +135,23 @@ def command(name: str | None = None, aliases: list[str] | None = None):
                 except SystemExit:
                     pass
 
-                # Option 1: Return a proper success report
                 if hasattr(self, 'succeeded'):
                     self.succeeded(msg=f"Help displayed for {cmd_name} command", dex={"action": "help", "command": cmd_name})
-
-                # Option 2: Uncomment below to suppress all report output for --help
-                # import sys
-                # sys.exit(0)
-
                 return
 
-            # Normal execution
-            return fn(self, barewords, **kwargs)
+            # Filter out CLIX internal parameters and extract typer defaults
+            processed_kwargs = {}
+            for key, value in kwargs.items():
+                # Skip the hardcoded CLIX xtraopt
+                if key == 'xtraopt':
+                    continue
+                # Extract actual values from typer OptionInfo objects
+                if hasattr(value, 'default'):
+                    processed_kwargs[key] = value.default
+                else:
+                    processed_kwargs[key] = value
+
+            return fn(self, barewords, **processed_kwargs)
 
         # Copy attributes to wrapper
         wrapper.__typer_app__ = app
@@ -148,6 +161,11 @@ def command(name: str | None = None, aliases: list[str] | None = None):
         wrapper.__name__ = fn.__name__
 
         return wrapper
+
+    # Handle @command without parentheses
+    if callable(fn_or_name):
+        return deco(fn_or_name)
+
     return deco
 
 class BioBase(clix.App):
@@ -163,7 +181,7 @@ class BioBase(clix.App):
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug(f'\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n{self.conf.show()}')
         self.file = self.conf.get('file', None)
-        LOGGER.info(
+        LOGGER.debug(
     "🔍 Parsed Command Args:\n"
     f"  comargs   : {self.comargs}\n"
     f"  actions   : {self.actions}\n"
@@ -238,6 +256,10 @@ class BioBase(clix.App):
         if self.file_path is None:
             # Return True for --help mode to avoid validation issues
             return True
+        
+        if not self.file_path.exists():
+            LOGGER.debug(f'File does not exist: {self.file_path}')
+            return False
 
         _, encoding = mimetypes.guess_type(self.file_path)
 

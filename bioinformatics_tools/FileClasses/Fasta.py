@@ -174,32 +174,35 @@ class Fasta(BioBase):
         self.succeeded(msg=f"All sequences:\n{data}", dex=data)
     
     @command(aliases=['gc per', 'per gc'])
-    def do_gc_content(self, barewords, something: str = 'hi', **kwargs):
+    def do_gc_content(
+            self,
+            barewords,
+            precision: int = 2,
+            **kwargs):
         '''Return the GC content of each sequence in the fasta file'''
+        precision = int(self.conf.get('precision', precision))
         gcContent = {}
         for cnt, items in self.fastaKey.items():
             seq = items[1].upper()
             gc_count = seq.count('G') + seq.count('C')
-            percent = round((gc_count) / len(seq), 3)
+            percent = round((gc_count) / len(seq), precision)
             gcContent[cnt] = (items[0], percent)
         data = gcContent
         self.succeeded(msg=f"GC Content per entry:\n{data}", dex=data)
 
     @command(aliases=['gc total', 'total gc'])
-    def do_gc_content_total(
-        self,
-        barewords,
-        precision: int = typer.Option(2, "--precision", "-p", help="Decimal precision for results"),
-        **kwargs
-    ):
-        '''Return the average GC content across all sequences in the fasta file'''
+    def do_gc_content_total(self, barewords, precision: int = 2, **kwargs):
+        '''Return the average GC content across all sequences in the fasta file
+        '''
+        # Get precision from CLIX configuration (handles precision: 4 syntax)
+        precision = int(self.conf.get('precision', precision))
         values = []
         for _, items in self.fastaKey.items():
             seq = items[1].upper()
             gc_count = seq.count('G') + seq.count('C')
             gc_content = (gc_count / len(seq)) * 100 if len(seq) > 0 else 0
-            values.append(round(gc_content, 3))
-        data = round(sum(values) / len(values), 2) if values else 0
+            values.append(round(gc_content, precision))
+        data = round(sum(values) / len(values), precision) if values else 0
         if kwargs.get('internal_call', False):
             return data
         self.succeeded(msg=f"Total GC Content: {data}", dex=data)

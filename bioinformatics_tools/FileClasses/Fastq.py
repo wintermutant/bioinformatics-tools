@@ -1,9 +1,10 @@
 import gzip
 import pathlib
+import typer
 
 import pandas as pd
 
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase
+from bioinformatics_tools.FileClasses.BaseClasses import BioBase, command
 
 
 class Fastq(BioBase):
@@ -38,7 +39,7 @@ class Fastq(BioBase):
 
         # Content Stuff
         valid_chars = set('ATGCNatgcn')
-        valid_qchars = '!"#$%&()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
+        valid_qchars = '!"#$%&()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
         valid_qchars += "'"
 
         line_count = 0
@@ -171,34 +172,37 @@ class Fastq(BioBase):
             msg=f"All sequence lengths:\n{data}", dex=data)
         return 0
     
-    def do_gc_content(self, barewords, **kwargs):
+    @command
+    def do_gc_content(self, barewords, precision: int = 2, **kwargs):
         '''
         Return the GC content for each record in the fastq file
         '''
+        precision = int(self.conf.get('precision', precision))
         gcContent = {}
         for cnt, items in self.fastqKey.items():
             seq = items[1].upper()
             gc_count = seq.count('G') + seq.count('C')
-            percent = round((gc_count) / len(seq), 3)
+            percent = round((gc_count) / len(seq), precision)
             gcContent[cnt] = (items[0], percent)
         data = gcContent
         self.succeeded(
             msg=f"All GC Content:\n{data}", dex=data)
         return 0
 
-    def do_gc_content_total(self, barewords, **kwargs):
+    @command
+    def do_gc_content_total(self, barewords, precision: int = 2, **kwargs):
         '''
         Get the total GC content for the fastq file
         '''
+        precision = int(self.conf.get('precision', precision))
         values = []
         for cnt, items in self.fastqKey.items():
             seq = items[1].upper()
             gc_count = seq.count('G') + seq.count('C')
             gc_content = (gc_count / len(seq)) * 100 if len(seq) > 0 else 0
-            values.append(round(gc_content, 3))
-        data = sum(values) / len(values) if values else 0
-        if kwargs.get('internal_call', False):
-            return data
+            values.append(round(gc_content, precision))
+        data = round(sum(values) / len(values), precision) if values else 0
+
         self.succeeded(
             msg=f"Total GC content: {data}", dex=data)
         return 0
