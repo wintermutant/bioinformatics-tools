@@ -37,7 +37,7 @@ Above, this will first provide a status report that consists of 4 lines, which l
 200: okay  
 \## Response
 
-Line one will tell you if the command succeeded or failed, lines 2 and 3 will give you a more specific status code, and line 4 will provide the response, which is often the part of the command output you'll be interested in.
+Line one will tell you if the command succeeded or failed, lines 2 and 3 will give you a more specific status code, and line 4 will provide the response, which is often the part of the command output you'll be interested in. Output in this format is included in every command standard out you execute.
 
 After, it will show a list of every possible command, along with the docstring content (or help message) for each said command. These list of commands will start with 0 and go up through the last command (sorted alphabetically). Notice if you change the **type** the possible commands will change.
 
@@ -66,6 +66,9 @@ Note that the position of the parameters, the type, and the file do not matter. 
 `dane filter sequences length: 20 type: fasta file: example.fasta`
 
 The only positional arguments that matter are the `dane` as the first and the next sequence of arguments specifying the action to invoke (`filter sequences`)
+
+If you need help with a command and the parameters it requires, or just want more information, you can type:
+`dane seq length type: fasta --help` -- add a trailing `--help` to get more information
 
 ### iii) Configuration Settings
 
