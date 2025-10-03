@@ -1,10 +1,14 @@
 import gzip
 import pathlib
+from venv import logger
 import typer
 
 from bioinformatics_tools.FileClasses.BaseClasses import BioBase, command
 
 from bioinformatics_tools.caragols.clix import LOGGER
+
+def example_function():
+    print('This is an example function.')
 
 
 class Fasta(BioBase):
@@ -23,8 +27,17 @@ class Fasta(BioBase):
         'rule_b': ('-UNSIMPLIFIED.fasta')
     }
 
-    def __init__(self, file=None, detect_mode="medium") -> None:
-        super().__init__(file=file, detect_mode=detect_mode, filetype='fasta')
+    def __init__(self, file=None, detect_mode="medium", run_mode='cli') -> None:
+        self.file, self.detect_mode, self.run_mode = file, detect_mode, run_mode
+        if self.run_mode == 'cli':
+            super().__init__(file=file, detect_mode=detect_mode, run_mode=run_mode, filetype='fasta')
+        elif self.run_mode == 'module' and self.file:
+            LOGGER.debug(f'Running in Fasta class without super init')
+            self.file_path = pathlib.Path(self.file)
+            self.file_name = self.file_path.name
+        else:
+            import sys
+            sys.exit('Error: When running in module mode, a file must be provided')
         # Default values
         self.known_extensions.extend(['.fna', '.fasta', '.fa'])
         self.preferred_extension = '.fasta.gz'
@@ -87,6 +100,10 @@ class Fasta(BioBase):
                 prev_header = False
 
         return True
+
+    # Database stuff
+    def to_pydantic(self):
+        return ('fake', 'tuple')
 
     # ~~~ Rewriting ~~~ #
     def do_write_confident(self, barewords, **kwargs):
@@ -173,7 +190,14 @@ class Fasta(BioBase):
         data = [v[1] for k, v in self.fastaKey.items()]
         self.succeeded(msg=f"All sequences:\n{data}", dex=data)
     
-    @command(aliases=['gc per', 'per gc'])
+    @command
+    def do_annotate_data(self, argument: str = 'Dane'):
+        '''Return all sequences to standard out'''
+        data = 'work in progress'
+        self.succeeded(msg=f"All sequences:\n{data}", dex=data)
+
+    
+    @command
     def do_gc_content(
             self,
             barewords,
@@ -190,7 +214,7 @@ class Fasta(BioBase):
         data = gcContent
         self.succeeded(msg=f"GC Content per entry:\n{data}", dex=data)
 
-    @command(aliases=['gc total', 'total gc'])
+    @command
     def do_gc_content_total(self, barewords, precision: int = 2, **kwargs):
         '''Return the average GC content across all sequences in the fasta file
         '''
@@ -220,7 +244,7 @@ class Fasta(BioBase):
             return data
         self.succeeded(msg=f"Total sequences: {data}", dex=data)
     
-    @command(aliases=['quick key', 'no way jose'])
+    @command
     def do_total_seq_length(self, ignore_size: int = 0, **kwargs):
         '''Return the total length of all sequences in the fasta file'''
         data = sum([len(v[1]) for k, v in self.fastaKey.items() ])
@@ -253,7 +277,7 @@ class Fasta(BioBase):
         msg = f'Processed with seqlength of {seqlength} and wrote to output: {output}'
         self.succeeded(msg=f"{msg}", dex=data)
     
-    @command(aliases=['largest', 'top seqs'])
+    @command
     def do_n_largest_seqs(
         self,
         barewords,
@@ -276,6 +300,7 @@ class Fasta(BioBase):
                 open_file.write(writeline)
         self.succeeded(msg=f'Success: File created', dex=None)
 
+    # TODO: Show here
     def do_seq_length(self, barewords, **kwargs):
         '''Return the length of a specific sequence'''
         data = {(k, v[0]): len(v[1]) for k, v in self.fastaKey.items()}

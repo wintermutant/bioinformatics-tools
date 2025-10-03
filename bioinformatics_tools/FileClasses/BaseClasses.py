@@ -175,9 +175,11 @@ class BioBase(clix.App):
     known_compressions = ['.gz', '.gzip']
     known_extensions = []
 
-    def __init__(self, file=None, detect_mode="medium", filetype=None) -> None:
+    def __init__(self, file=None, detect_mode="medium", run_mode='cli', filetype=None) -> None:
         self.detect_mode = detect_mode
-        super().__init__(run_mode="cli", name=MAIN_EXECUTABLE_NAME, filetype=filetype)
+        print(f'Running in BioBase')
+        super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
+        print(f'Finished super init in BioBase')
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug(f'\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n{self.conf.show()}')
         self.file = self.conf.get('file', None)
