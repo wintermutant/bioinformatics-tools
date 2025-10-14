@@ -62,8 +62,8 @@ def cli():
         for type_identifier in file_type_identifiers:
             if type_.lower() == type_identifier.lower():
                 matched = True
-                LOGGER.debug(f'Matched {type_identifier} to {type_}')
-                LOGGER.info(f'✅ Recognized type ({type_}) and matched to module')
+                LOGGER.debug("Matched %s to %s", type_identifier, type_)
+                LOGGER.info('✅ Recognized type (%s) and matched to module', type_)
                 import_string = f"bioinformatics_tools.FileClasses.{type_identifier}"
                 LOGGER.debug(f'📦 Importing {import_string}')
                 current_module = importlib.import_module(import_string)

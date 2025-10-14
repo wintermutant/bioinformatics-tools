@@ -1,3 +1,9 @@
+'''
+TODO: This module is a placeholder and a work in progress.
+Module that allows you to generate miscellaneous files that don't have a dedicated class,
+as defined by type: <filetype> in the config file or command line.
+Not sure exactly where I was going with this...
+'''
 from datetime import datetime
 import gzip
 import pathlib

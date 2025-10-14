@@ -1,8 +1,9 @@
 import gzip
+import inspect
 import mimetypes
 import pathlib
 import sys
-import inspect
+
 import typer
 
 from bioinformatics_tools.caragols import clix
@@ -177,9 +178,9 @@ class BioBase(clix.App):
 
     def __init__(self, file=None, detect_mode="medium", run_mode='cli', filetype=None) -> None:
         self.detect_mode = detect_mode
-        print(f'Running in BioBase')
+        print('Running in BioBase')
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
-        print(f'Finished super init in BioBase')
+        print('Finished super init in BioBase')
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug(f'\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n{self.conf.show()}')
         self.file = self.conf.get('file', None)
@@ -219,7 +220,7 @@ class BioBase(clix.App):
             else:
                 sys.exit(0)
         LOGGER.debug('#~~~~~~~~~~ Finished BioBase Init ~~~~~~~~~~#\n')
-    
+
     def clean_file_name(self) -> str:
         '''
         Always want our fastq file to end in .fastq.gz.
@@ -260,7 +261,7 @@ class BioBase(clix.App):
             return True
         
         if not self.file_path.exists():
-            LOGGER.debug(f'File does not exist: {self.file_path}')
+            LOGGER.debug('File does not exist: %s', self.file_path)
             return False
 
         _, encoding = mimetypes.guess_type(self.file_path)
