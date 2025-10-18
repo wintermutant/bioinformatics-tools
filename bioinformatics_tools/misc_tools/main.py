@@ -1,6 +1,6 @@
 '''
-Dynamic module dispatcher for miscTools.
-Allows invoking any Python module or bash script in miscTools/ via: misc <script_name> <args>
+Dynamic module dispatcher for misc_tools.
+Allows invoking any Python module or bash script in misc_tools/ via: misc <script_name> <args>
 '''
 import argparse
 import getpass
@@ -17,12 +17,12 @@ from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
 
 def get_available_scripts():
     """
-    Get list of available Python modules and bash scripts in miscTools directory.
+    Get list of available Python modules and bash scripts in misc_tools directory.
 
     Returns:
         dict: {script_name: ('python'|'bash', full_path)}
     """
-    package_spec = importlib.util.find_spec("bioinformatics_tools.miscTools")
+    package_spec = importlib.util.find_spec("bioinformatics_tools.misc_tools")
     package_path = Path(package_spec.submodule_search_locations[0])
 
     scripts = {}
@@ -98,7 +98,7 @@ def cli():
     elif script_type == 'python':
         try:
             # Import the module
-            module_name = f"bioinformatics_tools.miscTools.{script_name}"
+            module_name = f"bioinformatics_tools.misc_tools.{script_name}"
             LOGGER.info(f"Importing module: {module_name}")
             module = importlib.import_module(module_name)
 

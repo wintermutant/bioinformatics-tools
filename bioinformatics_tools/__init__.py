@@ -8,7 +8,7 @@ toolSets = {
     'alignmentTools': 'Tools used during alignment',
     'annotationTools': 'Tools used during annotation',
     'fastaTools': 'Tools used for with fasta as input',
-    'miscTools': 'Tools with miscellaneous uses',
+    'misc_tools': 'Tools with miscellaneous uses',
     'xTools.py': "Example for dev"}
 
 # Dictionaries for each executable script to find their programs
@@ -109,7 +109,7 @@ default is 0.'}
 }
 
 
-miscTools_programs = {
+misc_tools_programs = {
     'appendBinID': (
         {'help':
          'Program that will append the bin identification a new field in a file \
