@@ -1,7 +1,7 @@
 '''
 Class definition of Browser Extensible Data Files
 '''
-from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
+from bioinformatics_tools.file_classes.base_classes import BioBase, command
 
 __aliases__ = ['bed']
 

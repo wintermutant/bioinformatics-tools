@@ -3,7 +3,7 @@ import mimetypes
 import pathlib
 import pandas as pd
 
-from bioinformatics_tools.file_classes.BaseClasses import BioBase
+from bioinformatics_tools.file_classes.base_classes import BioBase
 
 __aliases__ = ['gtf', 'genetransfer']
 

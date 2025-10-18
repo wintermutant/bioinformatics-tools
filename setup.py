@@ -52,7 +52,7 @@ setup(
     python_requires='>=3.11',
     entry_points={
         'console_scripts': [
-            'dane=bioinformatics_tools.FileClasses.main:cli',
+            'dane=bioinformatics_tools.file_classes.main:cli',
             # 'fasta-tools=bioinformatics_tools.fastaTools.main:main'
             'misc=bioinformatics_tools.miscTools.main:cli'
             ],

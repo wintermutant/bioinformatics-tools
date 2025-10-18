@@ -1,7 +1,7 @@
 '''
 Class skeleton for new file types
 '''
-from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
+from bioinformatics_tools.file_classes.base_classes import BioBase, command
 
 
 class ExampleClass(BioBase):
