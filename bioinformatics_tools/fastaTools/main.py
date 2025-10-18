@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 import bioinformatics_tools
-from bioinformatics_tools.FileClasses.Fasta import Fasta
+from bioinformatics_tools.file_classes.Fasta import Fasta
 from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
 
 def main():

@@ -5,13 +5,12 @@ as defined by type: <filetype> in the config file or command line.
 Not sure exactly where I was going with this...
 '''
 from datetime import datetime
-import gzip
 import pathlib
 
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase
-
+from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
 from bioinformatics_tools.caragols.clix import LOGGER
 
+__aliases__ = ['gen']
 
 class Generate(BioBase):
     '''
@@ -20,13 +19,17 @@ class Generate(BioBase):
     '''
 
     def __init__(self, file=None, detect_mode="medium") -> None:
-        super().__init__(file=file, detect_mode=detect_mode, filetype='fasta')
-        # Default values
+        super().__init__(file=file, detect_mode=detect_mode, filetype='n/a')
+        
+        # --------------------------- Class-specific stuff --------------------------- #
         self.known_extensions.extend(['.csv', '.txt'])
         self.preferred_extension = '.txt'
-        self.preferred_file_path = self.clean_file_name()
-        self.valid = True
+        self.valid = True  # Bypass the default self.valid
 
+        # ------------------- Filename and Content Validation Stuff ------------------ #
+        self.preferred_file_path = self.clean_file_name()
+
+    @command
     def do_create_slurm(self, barewords, **kwargs):
         '''
         Create a slurm script for the user with default parameters, or specify your own.
