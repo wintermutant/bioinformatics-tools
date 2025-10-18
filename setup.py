@@ -31,7 +31,7 @@ setup(
     packages=find_packages(),
     package_data={
         '': ['caragols/*.yaml', 'caragols/*.json'],
-        'bioinformatics_tools.miscTools': ['*.sh'],
+        'bioinformatics_tools.misc_tools': ['*.sh'],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -54,8 +54,8 @@ setup(
         'console_scripts': [
             'dane=bioinformatics_tools.file_classes.main:cli',
             # 'fasta-tools=bioinformatics_tools.fastaTools.main:main'
-            'misc=bioinformatics_tools.miscTools.main:cli'
+            'misc=bioinformatics_tools.misc_tools.main:cli'
             ],
         },
-    scripts=glob.glob('bioinformatics_tools/miscTools/*.sh')
+    scripts=glob.glob('bioinformatics_tools/misc_tools/*.sh')
 )
