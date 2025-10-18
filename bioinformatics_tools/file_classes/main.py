@@ -7,26 +7,42 @@ of what the process looks like.
 The natural language description of the pipeline would be hard-coded
 since we know what input and output to expect.
 '''
-import argparse
 import getpass
-import glob
 import importlib
 import os
 from pathlib import Path
-import pkgutil
 import sys
 
 # from Fasta import Fasta
 import bioinformatics_tools
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase
 from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
 
-package_spec = importlib.util.find_spec("bioinformatics_tools.FileClasses")
+package_spec = importlib.util.find_spec("bioinformatics_tools.file_classes")
 package_path = package_spec.submodule_search_locations[0]
 
 real_py_class_filenames = [f.rsplit('.', 1)[0] for f in os.listdir(package_path) if f.endswith('.py') and not f.startswith('__')]
-real_py_class_filenames = [x for x in real_py_class_filenames if x != 'main']
+real_py_class_filenames = [x for x in real_py_class_filenames if x not in ['main', 'BaseClasses']]
 file_type_identifiers = [f for f in real_py_class_filenames]
+
+# Build alias-to-module mapping
+alias_to_module = {}
+for module_name in real_py_class_filenames:
+    try:
+        import_string = f"bioinformatics_tools.file_classes.{module_name}"
+        module = importlib.import_module(import_string)
+        # Add the module name itself as an alias (case-insensitive)
+        alias_to_module[module_name] = [module_name, module_name.lower()]
+        LOGGER.debug('Loaded module: %s', module_name)
+        # Add any defined aliases
+        if hasattr(module, '__aliases__'):
+            LOGGER.debug('Found aliases for %s: %s', module_name, module.__aliases__)
+            if isinstance(module.__aliases__, list):
+                alias_to_module[module_name].extend(module.__aliases__)
+            elif isinstance(module.__aliases__, str):
+                alias_to_module[module_name].append(module.__aliases__)
+    except ModuleNotFoundError as e:
+        LOGGER.info('Could not load aliases for %s: %s', module_name, e   )
+
 
 def find_file_type(args: list) -> None | str:
     '''
@@ -43,6 +59,8 @@ def find_file_type(args: list) -> None | str:
 
 
 def cli():
+    '''Command line interface for the script.
+    '''
     # Step 0 - Configure Logging
     config_logging_for_app()
     startup_info = {
@@ -51,28 +69,34 @@ def cli():
         'argv': sys.argv,
         'package_version': bioinformatics_tools.__version__
     }
-    LOGGER.debug(f'\nStartup:\n{startup_info}', extra={'startup_info': startup_info}) # user, cwd, sys.argv, app version
+    LOGGER.debug('\nStartup: %s\n', startup_info) # user, cwd, sys.argv, app version
 
     # Step 1 - Parse command line for "type"
     matched = False
     type_ = find_file_type(sys.argv)
-    LOGGER.debug(f'Recognize file type: {type_}')
+    LOGGER.debug('Recognize file type: %s', type_)
     # Step 2 - Parse command line for "available programs"
     if type_:
-        for type_identifier in file_type_identifiers:
-            if type_.lower() == type_identifier.lower():
+        for module_str, type_identifier in alias_to_module.items():
+            if type_.lower() in type_identifier:
                 matched = True
-                LOGGER.debug("Matched %s to %s", type_identifier, type_)
-                LOGGER.info('✅ Recognized type (%s) and matched to module', type_)
-                import_string = f"bioinformatics_tools.FileClasses.{type_identifier}"
-                LOGGER.debug(f'📦 Importing {import_string}')
+                LOGGER.debug('✅ Recognized type (%s) and matched to module', type_)
+                import_string = f"bioinformatics_tools.file_classes.{module_str}"
+                LOGGER.debug('📦 Importing %s', import_string)
                 current_module = importlib.import_module(import_string)
-                CurrentClass = getattr(current_module, type_identifier)
-                
+                CurrentClass = None
+                for type_id in type_identifier:
+                    if getattr(current_module, type_id, None):
+                        LOGGER.debug('Using alias %s to refer to module %s', type_id, module_str)
+                        CurrentClass = getattr(current_module, type_id)
+                        break
+                if CurrentClass is None:
+                    LOGGER.error('Could not find a class in module %s that matches any of the aliases %s', module_str, type_identifier)
+                    sys.exit(1)  #TODO: Show a report here
                 # Controlling the execution of the class
                 data = CurrentClass()  # Shows config
                 if not data.valid:
-                    LOGGER.debug(f'File provided failed validation test')
+                    LOGGER.debug('File provided failed validation test')
                     data.file_not_valid_report()
                 # Executing the Class
                 data.run()
@@ -80,7 +104,7 @@ def cli():
             else:
                 pass
         if not matched:
-            LOGGER.error(f'Program not found in available programs to deal with file type: {type_} Exiting...\n\n')
+            LOGGER.error('Program not found in available programs to deal with file type: %s Exiting...\n\n', type_)
     else:
         if any(arg in sys.argv for arg in ("help", "Help", "HELP")):
             LOGGER.info('🆘 Help requested')
@@ -90,9 +114,8 @@ def cli():
                 help_string += f'  {type_identifier}\n'
             LOGGER.info(help_string)
         else:
-            LOGGER.error(f'No file type provided. Please specify via the command line\ndane type: <file_type>\nExiting...')
+            LOGGER.error('No file type provided. Please specify via the command line\ndane type: <file_type>\nExiting...')
 
 
 if __name__ == "__main__":
-    # print(f'Sys.argv: {sys.argv}')
     cli()

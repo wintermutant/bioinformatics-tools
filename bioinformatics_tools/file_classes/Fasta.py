@@ -3,7 +3,6 @@ Module for all things fasta
 '''
 import gzip
 import pathlib
-from datetime import datetime
 from uuid import UUID, uuid4
 
 import typer
@@ -11,7 +10,7 @@ from pydantic import BaseModel, Field
 from pydantic_sqlite import DataBase
 
 from bioinformatics_tools.caragols.clix import LOGGER
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase, command
+from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
 
 
 class FastaRecord(BaseModel):
@@ -38,7 +37,6 @@ class Fasta(BioBase):
     }
 
     def __init__(self, file=None, detect_mode="medium", run_mode='cli') -> None:
-        self.timestamp = datetime.now().strftime("%d%m%y-%H%M")
         self.file, self.detect_mode, self.run_mode = file, detect_mode, run_mode
         if self.run_mode == 'cli':
             super().__init__(file=file, detect_mode=detect_mode, run_mode=run_mode, filetype='fasta')
@@ -49,15 +47,16 @@ class Fasta(BioBase):
         else:
             import sys
             sys.exit('Error: When running in module mode, a file must be provided')
-        # Default values
+       
+        # --------------------------- Class-specific stuff --------------------------- #
         self.known_extensions.extend(['.fna', '.fasta', '.fa'])
         self.preferred_extension = '.fasta.gz'
 
-        # Custom stuff
+        # ------------------------------- Custom stuff ------------------------------- #
         self.fastaKey: dict[int, tuple[str, str]] = {}
         self.written_output = []
 
-        # Filename and Content Validation stuff
+        # --------------------------- Filename and Content Validation stuff --------------------------- #   
         self.preferred_file_path = self.clean_file_name()
         self.valid_extension = self.is_known_extension()
         self.valid = self.is_valid()

@@ -4,7 +4,7 @@ import typer
 
 import pandas as pd
 
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase, command
+from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
 
 
 class Fastq(BioBase):
@@ -14,20 +14,20 @@ class Fastq(BioBase):
 
     def __init__(self, file=None, detect_mode="medium") -> None:
         super().__init__(file=file, detect_mode=detect_mode, filetype='fastq')
-        # Default value extension
+        
+        # --------------------------- Class-specific stuff --------------------------- #
         self.known_extensions.extend(['.fastq', '.fq'])
         self.preferred_extension = '.fastq.gz'
-        self.preferred_file_path = self.clean_file_name()
 
-        # Custom stuff
+        # ------------------------------- Custom Stuff ------------------------------- #
         self.fastqKey = {}
         self.written_output = []
 
-        # Validation -> detect_mode=None skips this
+        # ------------------- Filename and Content Validation Stuff ------------------ #
+        self.preferred_file_path = self.clean_file_name()
         self.valid_extension = self.is_known_extension()
         self.valid = self.is_valid()
 
-    # ~~~ Validation Stuff ~~~ #
     def validate(self, open_file, mode="medium"):
         '''
         Validate the Fastq file and hydrate self.fastqKey, a dictionary of the fastq file
@@ -90,6 +90,8 @@ class Fastq(BioBase):
 
         return valid
     
+    # ------------------------------- File Writing ------------------------------- #
+    @command
     def do_write_confident(self, barewords, **kwargs):
         '''
         Here, we always want the same extension and compression: .fasta.gz
@@ -106,17 +108,18 @@ class Fastq(BioBase):
 
         if output.suffix in ['.gz', '.gzip']:
             with gzip.open(str(self.preferred_file_path), 'wt') as open_file:
-                open_file.write(f'defline,sequence,defline2,quality\n')
+                open_file.write('defline,sequence,defline2,quality\n')
                 for key, value in self.fastqKey.items():
                     open_file.write(f'{value[0]}\n{value[1]}\n{value[2]}\n{value[3]}\n')
         else:
-            with open(str(output), 'w') as open_file:
-                open_file.write(f'defline,sequence,defline2,quality\n')
+            with open(str(output), 'w', encoding='utf-8') as open_file:
+                open_file.write('defline,sequence,defline2,quality\n')
                 for _, value in self.fastqKey.items():
                     open_file.write(f'{value[0]}\n{value[1]}\n{value[2]}\n{value[3]}\n')
         response = 'Wrote the output file'
         self.succeeded(msg=f"{response}", dex=response)
     
+    @command
     def do_write_table(self, barewords, **kwargs):
         '''Tabular output'''
         if not self.valid:
@@ -130,18 +133,21 @@ class Fastq(BioBase):
         output = pathlib.Path(output)
 
         if output.suffix in ['.gz', '.gzip']:
-            open_file.write(f'defline,sequence,defline2,quality\n')
-            with gzip.open(str(output), 'wt') as open_file:
+            with gzip.open(str(self.preferred_file_path), 'wt') as open_file:
+                open_file.write('defline,sequence,defline2,quality\n')
+            # with gzip.open(str(output), 'wt') as open_file:
                 for _, value in self.fastqKey.items():
                     open_file.write(f'{value[0]},{value[1]},{value[2]},{value[3]}\n')
         else:
-            with open(str(output), 'w') as open_file:
-                open_file.write(f'defline,sequence,defline2,quality\n')
+            with open(str(output), 'w', encoding='utf-8') as open_file:
+                print(f'Opening {output} for writing')
+                open_file.write('defline,sequence,defline2,quality\n')
                 for key, value in self.fastqKey.items():
                     open_file.write(f'{value[0]},{value[1]},{value[2]},{value[3]}\n')
         response = 'Wrote the output file'
         self.succeeded(msg=f"{response}", dex=response)
 
+    @command
     def do_grab_first_record(self, barewords, **kwargs):
         '''
         Returns the first record in the fastq file
@@ -151,6 +157,7 @@ class Fastq(BioBase):
             msg=f"First record:\n{data}", dex=data)
         return 0
 
+    @command
     def do_all_headers(self, barewords, **kwargs):
         '''
         Shows all headers in the fastq file
@@ -160,6 +167,7 @@ class Fastq(BioBase):
             msg=f"All headers:\n{data}", dex=data)
         return 0
     
+    @command
     def do_seqlengths(self, barewords, **kwargs):
         '''
         Return all of the seqlengths in the fastq file
@@ -196,24 +204,30 @@ class Fastq(BioBase):
         '''
         precision = int(self.conf.get('precision', precision))
         values = []
+        print(f'Self.fastqKey: {self.fastqKey}')
         for cnt, items in self.fastqKey.items():
             seq = items[1].upper()
+            print(f'Seq: {seq}')
             gc_count = seq.count('G') + seq.count('C')
             gc_content = (gc_count / len(seq)) * 100 if len(seq) > 0 else 0
             values.append(round(gc_content, precision))
         data = round(sum(values) / len(values), precision) if values else 0
 
+        if kwargs.get('internal_call', False):
+            return data
         self.succeeded(
             msg=f"Total GC content: {data}", dex=data)
         return 0
 
+    @command
     def do_total_seqs(self, barewords, **kwargs):
         '''Return the total number of sequences (aka, entries) in the fasta file'''
         data = len(self.fastqKey.keys())
         if kwargs.get('internal_call', False):
             return data
         self.succeeded(msg=f"Total sequences: {data}", dex=data)
-    
+
+    @command
     def do_total_seq_length(self, barewords, **kwargs):
         '''Return the total length of all sequences in the fasta file'''
         data = sum([len(v[1]) for k, v in self.fastqKey.items() ])
@@ -221,6 +235,7 @@ class Fastq(BioBase):
             return data
         self.succeeded(msg=f"Total sequence length: {data}", dex=data)
     
+    @command
     def do_basic_stats(self, barewords, **kwargs):
         '''Return basic statistics of the fasta file'''
         data = {

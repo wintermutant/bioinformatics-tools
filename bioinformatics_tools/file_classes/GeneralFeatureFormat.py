@@ -1,9 +1,11 @@
-import gzip
+'''
+Class definition of General Feature Format version 3
+'''
 import pathlib
-import pandas as pd
 
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase
+from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
 
+__aliases__ = ['gff', 'gff3']
 
 class GeneralFeatureFormat(BioBase):
     '''
@@ -13,23 +15,23 @@ class GeneralFeatureFormat(BioBase):
 
     def __init__(self, file=None, detect_mode="medium") -> None:
         super().__init__(file, detect_mode, filetype='generalfeatureformat')
-        # Default values
+        
+        # --------------------------- Class-specific stuff --------------------------- #
         self.known_extensions.extend(['.gff', '.gff3', '.g3'])
         self.preferred_extension = '.gff3.gz'
 
-        # Custom stuff
+        # ------------------------------- Custom Stuff ------------------------------- #
         self.gffKey = {}
         self.written_output = []
-        self.preferred_file_path = self.clean_file_name()
 
+        # ------------------- Filename and Content Validation Stuff ------------------ #
+        self.preferred_file_path = self.clean_file_name()
         self.valid_extension = self.is_known_extension()
         self.valid = self.is_valid()
 
     def validate(self, open_file, mode="medium"):
         if self.detect_mode == 'soft':
-            print(f'DEBUG: Detecting in soft mode, only checking extension')
             return self.valid_extension
-        print(f'DEBUG: Detecting comprehensively')
 
         line_count = 0
         valid = True
@@ -88,7 +90,8 @@ class GeneralFeatureFormat(BioBase):
                 break
         return valid
 
-    # ~~~ Rewriting ~~~ #
+    # --------------------------------- Rewriting -------------------------------- #
+    @command
     def do_write_confident(self, barewords, **kwargs):
         '''Write the confident GFF3 file to disk using default extension'''
         if not self.valid:
@@ -110,7 +113,8 @@ class GeneralFeatureFormat(BioBase):
                     open_file.write(f'{value[0]}\t{value[1]}\t{value[2]}\t{value[3]}\t{value[4]}\t{value[5]}\t{value[6]}\t{value[7]}\t{value[8]}\n')
         response = 'Wrote the output file'
         self.succeeded(msg=f"{response}", dex=response)
-    
+
+    @command
     def do_write_table(self, barewords, **kwargs):
         '''Tabular output'''
         if not self.valid:
@@ -135,6 +139,7 @@ class GeneralFeatureFormat(BioBase):
         response = 'Wrote the output file'
         self.succeeded(msg=f"{response}", dex=response)
 
+    @command
     def do_get_longest_gene(self, barewords, **kwargs):
         '''
         Get the longest gene in the GFF3 file.

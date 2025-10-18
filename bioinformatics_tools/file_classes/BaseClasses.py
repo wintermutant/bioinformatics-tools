@@ -1,3 +1,4 @@
+from datetime import datetime
 import gzip
 import inspect
 import mimetypes
@@ -177,6 +178,7 @@ class BioBase(clix.App):
     known_extensions = []
 
     def __init__(self, file=None, detect_mode="medium", run_mode='cli', filetype=None) -> None:
+        self.timestamp = datetime.now().strftime("%d%m%y-%H%M")
         self.detect_mode = detect_mode
         print('Running in BioBase')
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
@@ -184,16 +186,12 @@ class BioBase(clix.App):
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug(f'\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n{self.conf.show()}')
         self.file = self.conf.get('file', None)
-        LOGGER.debug(
-    "🔍 Parsed Command Args:\n"
-    f"  comargs   : {self.comargs}\n"
-    f"  actions   : {self.actions}\n"
-    # f"  barewords : {self.barewords}"
-)
+        LOGGER.debug('Parsed Command Args:\ncomargs: %s\nactions: %s\nbarewords: %s', self.comargs, self.actions, self.barewords)
 
         if not self.matched:
-            LOGGER.info(self.report.formatted(self.form)+'\n')
+            LOGGER.info('%s \n', self.report.formatted(self.form))
             self.done()
+            #TODO: sys.exit should be replaced with a report.
             if self.report.status.indicates_failure:
                 sys.exit(1)
             else:
@@ -210,10 +208,10 @@ class BioBase(clix.App):
         elif self.file:
             self.file_path = pathlib.Path(self.file)
             self.file_name = self.file_path.name
-        else:
-            message = f'ERROR: No file provided. Please add file via: $ dane file: example.fasta'
-            self.failed(msg=f"Total sequences: {message}", dex=message)
-            LOGGER.info(self.report.formatted(self.form) + '\n')
+        else:  #TODO: Case when type: generate and no file provided, it should be okay
+            message = 'ERROR: No file provided. Please add file via: $ dane file: example.fasta'
+            self.failed(msg=f"{message}", dex=message)
+            LOGGER.info('%s \n', self.report.formatted(self.form))
             self.done()
             if self.report.status.indicates_failure:
                 sys.exit(1)
@@ -269,7 +267,7 @@ class BioBase(clix.App):
         # Here, open up the file and validate it to determine if it is indeed the correct file type
         if not encoding:  # This means no compression
             LOGGER.debug('File is not compressed')
-            with open(str(self.file_path), 'rt') as open_file:
+            with open(str(self.file_path), 'rt', encoding='utf-8') as open_file:
                 return self.validate(iter(open_file))
         #TODO Add dynamic opening from self.known_compressions
         elif encoding == 'gzip':
@@ -277,21 +275,22 @@ class BioBase(clix.App):
             with gzip.open(str(self.file_path), 'rt') as open_file:
                 return self.validate(iter(open_file))
         else:
-            LOGGER.debug(f'File is compressed but in an unknown format: {encoding}')
+            LOGGER.debug('File is compressed but in an unknown format: %s', encoding)
             return False
     
     def file_not_valid_report(self):
-        message = f'File is not valid according to validation'
+        message = 'File is not valid according to validation'
         LOGGER.error(message)
         self.failed(
             msg=f"{message}", dex=message)
-        LOGGER.info(self.report.formatted(self.form) + '\n')
+        LOGGER.info('%s \n', self.report.formatted(self.form))
         self.done()
         if self.report.status.indicates_failure:
             sys.exit(1)
         else:
             sys.exit(0)
     
+    @command
     def do_valid(self, barewords, **kwargs):
         '''Check to see if the file is valid, meaning it has been parsed and the contents are correct'''
         response = self.valid

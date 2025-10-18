@@ -3,7 +3,9 @@ import mimetypes
 import pathlib
 import pandas as pd
 
-from bioinformatics_tools.FileClasses.BaseClasses import BioBase
+from bioinformatics_tools.file_classes.BaseClasses import BioBase
+
+__aliases__ = ['gtf', 'genetransfer']
 
 
 class GeneTransferFormat(BioBase):
@@ -27,25 +29,29 @@ class GeneTransferFormat(BioBase):
 
     def validate(self, open_file, mode="medium"):
         '''
-        Takes in an open file (iterator) as validates it
-        TODO: Take in a string or something instead?
-        Generator/iterator is the best way to handle large files
+        NOT IMPLEMENTED YET
         '''
         return True
 
     # ~~~ Rewriting ~~~ #
     def do_write_confident(self, barewords, **kwargs):
-        '''Write the confident GTF file to disk using default extension'''
+        '''
+        NOT IMPLEMENTED YET
+        '''
         response = 'Passing: TODO'
         self.succeeded(msg=f"{response}", dex=response)
     
     def do_write_table(self, barewords, **kwargs):
-        '''Tabular GTF output'''
+        '''
+        NOT IMPLEMENTED YET
+        '''
         response = 'Passing: TODO'
         self.succeeded(msg=f"{response}", dex=response)
 
-    def do_get_longest_gene(self, barewords, **kwargs):
-        '''Test function'''
+    def do_test_function(self, barewords, **kwargs):
+        '''
+        NOT IMPLEMENTED YET
+        '''
         response = 'Test function'
         self.succeeded(msg=f"{response}", dex=response)
 
