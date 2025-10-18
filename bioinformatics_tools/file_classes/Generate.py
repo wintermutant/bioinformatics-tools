@@ -7,7 +7,7 @@ Not sure exactly where I was going with this...
 from datetime import datetime
 import pathlib
 
-from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
+from bioinformatics_tools.file_classes.base_classes import BioBase, command
 from bioinformatics_tools.caragols.clix import LOGGER
 
 __aliases__ = ['gen']

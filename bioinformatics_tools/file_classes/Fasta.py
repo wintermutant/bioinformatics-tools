@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from pydantic_sqlite import DataBase
 
 from bioinformatics_tools.caragols.clix import LOGGER
-from bioinformatics_tools.file_classes.BaseClasses import BioBase, command
+from bioinformatics_tools.file_classes.base_classes import BioBase, command
 
 
 class FastaRecord(BaseModel):

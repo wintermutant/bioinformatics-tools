@@ -4,6 +4,24 @@
 
 Here we present simple tools for common bioinformatic use-cases, as well as other convenient functionality for your everyday command-line hacker. The main functionality takes in a file and a specified type, and will validate the file plus perform any simple stats, permutations, or filters. We were tired of getting errors when shoving data that wasn't first validated into pipelines, as well as performing the same bash and python hacks to look a little deeper at our large files. Further, we wanted a way to extend file validation and hacks to custom file types in our lab. Lastly, we wanted a more robust way to configure settings and record our behavior so we could be more reproducible without expending any extra effort.
 
+- [General Tools (for Bioinformatics)](#general-tools-for-bioinformatics)
+    - [A Diet-Microbiome Interactions Lab-Supported Resource out of Purdue University](#a-diet-microbiome-interactions-lab-supported-resource-out-of-purdue-university)
+  - [Setup \& Installation](#setup--installation)
+    - [i) Setup (Start Here!)](#i-setup-start-here)
+    - [ii) Installation](#ii-installation)
+  - [How to use this library](#how-to-use-this-library)
+    - [i) Getting help](#i-getting-help)
+    - [ii) Command LIne Extension (CLIX)](#ii-command-line-extension-clix)
+    - [iii) Configuration Settings](#iii-configuration-settings)
+      - [Advanced Users](#advanced-users)
+    - [iv) Logging](#iv-logging)
+  - [EXTRAs: Some philosophical rants](#extras-some-philosophical-rants)
+    - [Let's talk about file validation](#lets-talk-about-file-validation)
+  - [Releases](#releases)
+  - [TODO](#todo)
+  - [Contributor Guide](#contributor-guide)
+
+
 ## Setup & Installation
 
 ### i) Setup (Start Here!)
@@ -160,16 +178,39 @@ There's a folder called FileTypes, which contains Python classes that validate a
 
 This project adheres to [semantic versioning](https://semver.org/), and we are in our 0.y.z phase, so this project is not signifying initial development. These releases are not considered stable, and their APIs can change frequently and without warning.
 
-## Next Steps
+## TODO
 
--   Allow strict vs. lenient validation of files
--   Add new filetypes
--   Incorporate files interacting with other files
--   Incorporate workflows
+- [ ] Allow strict vs. lenient validation of files
+- [ ] Add levels for self.validate (hard, soft, ad-hoc, etc.)
+- [ ] Incorporate files interacting with other files
+- [ ] Incorporate workflows
+- [ ] Suffix error when you have file: example.
+- [ ] dane type: generate requires a file: but it doesn't acknowledge it when it write it
+- [ ] it's also kind of silly to do $ dane create slurm type: gen --> eventually should have some other magic logic
+- [ ] BAM
+  - [ ] imports
+  - [ ] __init__
+  - [ ] validate
+  - [ ] @commands
+- [ ] BED
+  - [ ] imports
+  - [ ] __init__
+  - [ ] validate
+  - [ ] @commands
+- [ ] GFF
+  - [ ] imports
+  - [ ] __init__
+  - [ ] validate
+  - [ ] @commands
+- [ ] GTF
+  - [ ] imports
+  - [ ] __init__
+  - [ ] validate
+  - [ ] @commands
 
 ## Contributor Guide
 
 Dane Deemer: Senior Computational Biologist (Purdue University)
 Nathan Denny: Lead Research Analyst (Purdue University)
 Stephen Lindemann: Associate Professor (Purdue University)
-Maverick Cook: Senior Software Engineer (Purdue University)
+Maverick Cook: Senior Software Engineer
