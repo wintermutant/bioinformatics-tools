@@ -22,26 +22,33 @@ package_path = package_spec.submodule_search_locations[0]
 
 real_py_class_filenames = [f.rsplit('.', 1)[0] for f in os.listdir(package_path) if f.endswith('.py') and not f.startswith('__')]
 real_py_class_filenames = [x for x in real_py_class_filenames if x not in ['main', 'BaseClasses']]
-file_type_identifiers = [f for f in real_py_class_filenames]
+file_type_identifiers = [f for f in real_py_class_filenames]  # TODO: Is this needed?
 
-# Build alias-to-module mapping
-alias_to_module = {}
-for module_name in real_py_class_filenames:
-    try:
-        import_string = f"bioinformatics_tools.file_classes.{module_name}"
-        module = importlib.import_module(import_string)
-        # Add the module name itself as an alias (case-insensitive)
-        alias_to_module[module_name] = [module_name, module_name.lower()]
-        LOGGER.debug('Loaded module: %s', module_name)
-        # Add any defined aliases
-        if hasattr(module, '__aliases__'):
-            LOGGER.debug('Found aliases for %s: %s', module_name, module.__aliases__)
-            if isinstance(module.__aliases__, list):
-                alias_to_module[module_name].extend(module.__aliases__)
-            elif isinstance(module.__aliases__, str):
-                alias_to_module[module_name].append(module.__aliases__)
-    except ModuleNotFoundError as e:
-        LOGGER.info('Could not load aliases for %s: %s', module_name, e   )
+
+def match_alias_to_module() -> dict[str, list[str]]:
+    '''
+    This function builds a mapping of aliases to module names
+    by inspecting the __aliases__ attribute of each module.
+    '''
+    alias_to_module = {}
+    for module_name in real_py_class_filenames:
+        try:
+            import_string = f"bioinformatics_tools.file_classes.{module_name}"
+            module = importlib.import_module(import_string)
+            # Add the module name itself as an alias (case-insensitive)
+            alias_to_module[module_name] = [module_name, module_name.lower()]
+            LOGGER.debug('Loaded module: %s', module_name)
+            # Add any defined aliases
+            if hasattr(module, '__aliases__'):
+                LOGGER.debug('Found aliases for %s: %s', module_name, module.__aliases__)
+                if isinstance(module.__aliases__, list):
+                    alias_to_module[module_name].extend(module.__aliases__)
+                elif isinstance(module.__aliases__, str):
+                    alias_to_module[module_name].append(module.__aliases__)
+        except ModuleNotFoundError as e:
+            LOGGER.info('Could not load aliases for %s: %s', module_name, e)
+            raise e  # TODO - our own exception here
+    return alias_to_module
 
 
 def find_file_type(args: list) -> None | str:
@@ -74,6 +81,7 @@ def cli():
     # Step 1 - Parse command line for "type"
     matched = False
     type_ = find_file_type(sys.argv)
+    alias_to_module = match_alias_to_module()
     LOGGER.debug('Recognize file type: %s', type_)
     # Step 2 - Parse command line for "available programs"
     if type_:
