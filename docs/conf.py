@@ -26,3 +26,14 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = 'alabaster'
 html_static_path = ['_static']
+
+# Configure sidebar to always show global table of contents
+html_sidebars = {
+    '**': [
+        'about.html',
+        'navigation.html',
+        'localtoc.html',  # Shows local TOC for current page
+        'relations.html',
+        'searchbox.html',
+    ]
+}

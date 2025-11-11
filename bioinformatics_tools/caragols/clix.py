@@ -37,6 +37,7 @@ class App:
     """
     """
 
+    # TODO: Where default config can be found
     config_filename = 'config-caragols.yaml'
     default_config_path = Path(__file__).parent / config_filename
     default_config = yaml.safe_load(default_config_path.read_text())

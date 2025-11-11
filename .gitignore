@@ -2,6 +2,10 @@
 *.code-workspace
 *-VALIDATED*
 
+# Documentation
+## sphinx
+_build*
+
 # Byte-compiled / optimized / DLL files
 .venv/
 __pycache__/

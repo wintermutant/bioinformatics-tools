@@ -1,4 +1,7 @@
 # General Tools (for Bioinformatics)
+[![Documentation Status](https://readthedocs.org/projects/bioinformatics-tools/badge/?version=latest)](https://bioinformatics-tools.readthedocs.io/en/latest/?badge=latest)
+
+Comprehensive toolkit for bioinformatics workflows.
 
 ### A Diet-Microbiome Interactions Lab-Supported Resource out of Purdue University
 
