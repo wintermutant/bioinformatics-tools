@@ -7,6 +7,11 @@ Overview
 -----------
 
 The package uses Python's built-in logging module to provide detailed information about operations and errors.
+We collect extra log information and place it in the following location:
+
+.. code-block:: bash
+
+   ~/.caragols/logs/<username>
 
 Log Levels
 ----------
@@ -25,25 +30,5 @@ Command Line
 
 .. code-block:: bash
 
-   # Set logging level
-   bioinformatics-tools --log-level DEBUG command
-
-Python API
-^^^^^^^^^^
-
-.. code-block:: python
-
-   import logging
-   from bioinformatics_tools import setup_logging
-
-   # Configure logging
-   setup_logging(level=logging.DEBUG, log_file="output.log")
-
-Log Output
-----------
-
-Logs can be directed to:
-
-- Console (stderr)
-- File
-- Both console and file simultaneously
+   # Example setting log levels in the future when it is implemented
+   bioinformatics-tools --log-level DEBUG command  # Not yet implemented
