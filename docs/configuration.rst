@@ -1,6 +1,8 @@
 Configuration
 =======================================
 
+**Work in Progress - Check back soon**
+
 Configure Bioinformatics Tools for your environment and workflow.
 
 Overview

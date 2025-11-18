@@ -6,7 +6,7 @@
 Bioinformatics Tools Documentation!
 =======================================
 
-:doc:`Skip to quickstart <usage/io>`
+:doc:`Skip to quickstart <tutorial/start>`
 
 **Purpose**: make everyday bioinformatics easier by supercharging the tools
 available for researchers to use on the command line.
@@ -32,10 +32,12 @@ aspects:
    :maxdepth: 2
    :caption: Chapters:
 
+   tutorial/index
    usage/index
    configuration
    logging
    extensions
+   contribution
    contact
 
 If you want to contact me, you can so by :doc:`clicking here <contact>`

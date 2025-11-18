@@ -1,0 +1,30 @@
+/* Make sidebar sticky/floating */
+div.sphinxsidebar {
+    position: sticky;
+    top: 10px;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+}
+
+/* Optional: Add smooth scrolling to sidebar */
+div.sphinxsidebar {
+    scrollbar-width: thin;
+}
+
+/* Optional: Style the scrollbar for webkit browsers */
+div.sphinxsidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+div.sphinxsidebar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+div.sphinxsidebar::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+}
+
+div.sphinxsidebar::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
