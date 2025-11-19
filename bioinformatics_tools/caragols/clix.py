@@ -3,53 +3,42 @@ caragols.clix
 
 I am the Command Line Invocation eXtension (clix)
 
-The basic idea is to rely on JSON or YAML documents for default and/or complex configuration.
-The command arguments are interpreted as a sequence of edit commands to the configuration object.
-The edit commmands are the same syntax and semantics as defined in the app.condo.Condex.sed method.
-
-For instance, the following command line ...
-
-RGB thumbnail ^defaults ^myconf landingzone: $HOME/APPF/LZ
-              thumbnails.Q: $HOME/APPF/Q thumbnails.ARK: $HOME/APPF/ARK
-              thumbnails.catalog+ hello.png thumbnails.processed! thumnails.cleaned~
-
-... runs the RGB program with thumbnail as the command, with the default conf updated
-    by loading in myconf.yaml and then applying the changes described in the rest of
-    the line.
+The basic idea is to rely on JSON or YAML documents for default and/or complex configuration. There are global to program-specific configuration values
+you can define; basically you can use the configuration file to customize anything.
 """
-import argparse
 import inspect
-from pathlib import Path
-import sys
 import os.path
-import glob
+import shutil
+import sys
+from pathlib import Path
 from typing import Optional
 
 import yaml
 
-from bioinformatics_tools.caragols import carp
-from bioinformatics_tools.caragols import condo
+from bioinformatics_tools.caragols import carp, condo
 
 from .logger import LOGGER
 
 
 class App:
+    """Main application for configuration, logging, and command line parsing.
     """
-    """
 
-    # TODO: Where default config can be found
-    config_filename = 'config-caragols.yaml'
-    default_config_path = Path(__file__).parent / config_filename
-    default_config = yaml.safe_load(default_config_path.read_text())
+    # Where default configs can be found
+    default_config_template_path = Path(__file__).parent / 'config-template.yaml'
+    config_filename = 'config.yaml'
+    default_config_path = Path.home() / '.config' / 'bioinformatics-tools' / config_filename
+
+    try:
+        default_config = yaml.safe_load(default_config_path.read_text())
+    except FileNotFoundError:
+        default_config = yaml.safe_load(default_config_template_path.read_text())
 
 
-    def __init__(self, name=None, run_mode="cli", comargs=['help'], filetype=None, **kwargs):
-        self.filetype = filetype        
-        # self.logger = LOGGER.getChild(name)
-        LOGGER.debug('# ~~~~~~~~~~ INIT Start: CLIX ~~~~~~~~~~ #')
+    def __init__(self, name=None, run_mode="cli", comargs: list = ['help'], filetype=None, **kwargs):
         LOGGER.debug('(i) Starting init for clix')
 
-
+        self.filetype = filetype
         self.run_mode = run_mode
         self.comargs = comargs
         self.actions = []
@@ -62,10 +51,6 @@ class App:
         # ---------------------------------------------------------------------------
         self.configure()
 
-        # ---------------------------------------------------------------------------
-        # -- setup command line argparser to show help messages nicely.             |
-        # ---------------------------------------------------------------------------
-        self.setup_help()
         # -----------------------------------------------------------------------
         # -- the default dispatcher is loaded by reading self for .do_* methods |
         # -----------------------------------------------------------------------
@@ -80,112 +65,103 @@ class App:
         tokens = [' '.join(v[0]) for v in self.dispatches]
 
         # -----------------------------------------------------------------------
-        # -- Perform the app.run() to setup the app                             |
+        # -- Perform the app.prepare_for_run() to setup the app                  |
         # -----------------------------------------------------------------------
-        # TODO: Logic for running here or somewhere else
-        # if something:
-        #     self.run(run_mode=run_mode)
-        # else:
-        #     something else
-        # TODO:
         self.prepare_for_run(run_mode)
         LOGGER.debug('# ~~~~~~~~~~ INIT End: CLIX ~~~~~~~~~~ #\n')
+        # Note: We do not do the app.run() --> this is controlled elsewhere so it runs when needed
 
 
+    @classmethod
+    def _initialize_user_config(cls) -> None:
+        '''Init config file is not found using the template and placing in home'''
+        LOGGER.debug('Running _initialize_user_config')
+        if not cls.default_config_path.exists():
+            cls.default_config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(cls.default_config_template_path, cls.default_config_path)
+            LOGGER.debug('Initialized config file at %s', cls.default_config_path)
+        else:
+            LOGGER.debug('Yes, path exists for %s', cls.default_config_path)
+    
     @property
     def name(self):
         if self._name is None:
             here = os.path.abspath(sys.argv[0])
-            folder, scriptfile = os.path.split(here)
-            appname, suffix = os.path.splitext(scriptfile)
+            _, scriptfile = os.path.split(here)
+            appname, _ = os.path.splitext(scriptfile)
             self._name = appname
         return self._name
 
     # --------------------------------
     # -- BEGIN configuration methods |
     # --------------------------------
-
-    def _check_for_outdated_config(self, input_config_file: Path):
-        # FUTURE:
-        if input_config_file != self.default_config_path:
-            input_config = yaml.safe_load(input_config_file.read_text())
-            input_version = input_config['maintenance-info']['version']
-            default_version = self.default_config['maintenance-info']['version']
-            if input_version < default_version:
-                message = f"""
-{'* ' * 40}
-Your caragols configuration file version {input_version} is older than the default of version {default_version}
-Contact for help: {self.default_config['maintenance-info']['contact']}
-{'* ' * 40}
-                """.strip()
-                LOGGER.warn(message)
-
     @classmethod
-    def _local_config_path(cls):
-        return Path.cwd() / cls.config_filename
+    def _template_config_path(cls):
+        return cls.default_config_template_path
     
     @classmethod
     def _passed_config_file(cls) -> Optional[Path]:
-        """Hack to parse a command line arg for a file path to a configuration file
+        """Parse a command line arg for a file path to a configuration file
         """
-        parser = argparse.ArgumentParser(prog='hack', add_help=False)
-        parser.add_argument('--config-file', type=Path)
-        known_args = parser.parse_known_args()[0]
         try:
-            return known_args.config_file.expanduser().absolute()
-        except AttributeError:
-            return None
-        
-    def setup_help(self):
-        pass
-    
-    def _iter_commands(self):
-        # only methods explicitly decorated (have __cmd_name__)
-        for _, fn in inspect.getmembers(self, predicate=callable):
-            if getattr(fn, "__cmd_name__", None):
-                yield fn
-    
-
+            for i, arg in enumerate(sys.argv):
+                if arg == 'config:' and i + 1 < len(sys.argv):
+                    config_path = sys.argv[i + 1]
+                    return Path(config_path).expanduser().absolute()
+        except (IndexError, ValueError):
+            pass
+        return None
 
     @classmethod
     def configuration_file(cls) -> Path:
         """
         Returns: 
             the first path that exists, starting in order
-            1. check sys.argv for --config-file arg
-            2. check current working directory for {cls.config_filename}
-            3. the default configuration file {cls.default_config_path}
+            1. check sys.argv for config: <example.config> argument
+            2. the default configuration file cls.config_filename
+            3. check current working directory for default_config_template_path
             
         Raises: 
             FileNotFoundError: No configuration found
         """
         paths_to_check = [
             cls._passed_config_file(),
-            cls._local_config_path(),
             cls.default_config_path,
+            cls._template_config_path(),
         ]
 
+        LOGGER.info('Paths to check: %s', paths_to_check)
         for path in paths_to_check:
             if path and path.exists():
+                LOGGER.info('Using config file: %s', path)
                 return path
         raise FileNotFoundError('No configuration found')
 
-
     def configure(self):
+        '''Setup configuration'''
         LOGGER.debug('\n(i) Configuration Setup')
         nuconf = condo.Condex()
+
+        self._initialize_user_config()
         config_file = self.configuration_file()
         # self._check_for_outdated_config(config_file)
         try:
             nuconf.load(config_file)
         except Exception:
-            LOGGER.exception(f'loading configuration file {config_file}')
+            LOGGER.exception('loading configuration file: %s', config_file)
             raise
         self.conf = nuconf
+    
+    def _iter_commands(self):
+        # only methods explicitly decorated (have __cmd_name__)
+        for _, fn in inspect.getmembers(self, predicate=callable):
+            if getattr(fn, "__cmd_name__", None):
+                yield fn
 
     # ------------------------------
     # -- END configuration methods |
     # ------------------------------
+
     @property
     def idioms(self):
         """
@@ -196,81 +172,51 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
             gravity = len(tokens)
             idioms.append((gravity, tokens, action))
         idioms = list(sorted(idioms, reverse=True))
-        LOGGER.debug(f'Created {len(idioms)} idioms')
+        LOGGER.debug('Created %i idioms', len(idioms))
         return idioms
 
     def cognize(self, comargs):
         """
         Given comargs, a "command" as a list of string tokens, I try to find a dispatch callable to act on the command.
         If I find a suitable method, I answer (action, barewords) where action is a reference to the callable (function, method, etc.)
-        that matches the command barewords is the list of remaining tokens that are not part of the command.
+        that matches the command. barewords is the list of remaining tokens that are not part of the command.
         Othwerise, I answer None.
         """
-        LOGGER.debug(f'Cognizing {comargs}')
+        LOGGER.debug('Cognizing %s', comargs)
         xtraopts = {'xtraopt': 'Pass for now'}
 
         matched = False
         for gravity, tokens, action in self.idioms:
             if comargs[:gravity] == tokens:
-                LOGGER.debug(f'Matched {comargs[:gravity]}')
+                LOGGER.debug('Matched: %s', comargs[:gravity])
                 matched = True
                 break
 
         if matched:
             confargs = comargs[gravity:]
-            LOGGER.debug(f'Found confargs: {confargs}')
+            LOGGER.debug('Found confargs: %s', confargs)
             barewords = self.conf.sed(confargs)
-            LOGGER.debug(f'Found barewords: {barewords}\nConfiguration: {self.conf.show()}')
+            # TODO: We find the barewords and don't do anything with them for now?
+            LOGGER.info('Found barewords: %s\nConfiguration: %s', barewords, self.conf.show())
             return (tokens, action, barewords, xtraopts)
-
-        else:
-            return None
 
     # ----------------------------
     # -- BEGIN app state methods |
     # ----------------------------
-    def begun(self):
+    def begun(self) -> None:
         """
         I am called after construction and initialization.
         Override my behavior in a subclass as a relatively easy way to do additional initialization ...
         ... after the configuration pile has been loaded and merged.
         """
-        pass
-    
-    def run(self):
-        LOGGER.debug(f'\n\n(v) Running the actual executable --> {self.action}')
-        xtraopts = self.xtraopts
-        self.action(self.barewords, **xtraopts)
-        # --------------------------------------------------
-        # -- If the action did not complete with a report, |
-        # -- this should be considered a crash!            |
-        # --------------------------------------------------
-        # TODO: Alter the below code to sort based off of CLI vs. GUI modes
-
-        LOGGER.debug('\n\n(vi): Running the final report')
-        if getattr(self, 'report', None) is None:
-            self.report = self.crashed("No report returned by action!")
-
-        form = self.conf.get('report.form', 'csv') # Change report form
-
-        if self.run_mode == "cli":
-            # Below is the culprite for the duplication!
-            LOGGER.info('📄 Report Generated:\n' + self.report.formatted(form))
-            self.done()
-            if self.report.status.indicates_failure:
-                sys.exit(1)
-            else:
-                sys.exit(0)
-        elif self.run_mode == "gui":
-            return {'status': 'success'}
+        # FUTURE
+        return None
 
     def prepare_for_run(self, run_mode):
         """
         I am the central dispatcher.
         I gather arguments from the command line,
         then invoke the appropriate "do_*" method.
-        I make a special case for the verb "explain".
-        "explain" does not execute a method, but instead dumps the invocation request as a merged context.
         """
         LOGGER.debug('\n(iii) Preparing for run')
         LOGGER.debug(sys.argv)
@@ -283,7 +229,6 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
         # -- "make catalog" has a gravity of 2, while ...                        |
         # -- "make new catalog" would have a gravity of 3.                       |
         # ------------------------------------------------------------------------
-        explaining = False
 
         if run_mode.lower() == 'cli':
             # Super important ---> where the CL interacts
@@ -296,9 +241,6 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
             # Idea --> in init has comargs=sys.argv[1:] if run_mode=='cli
             sys.exit(1)
 
-        if self.comargs and (self.comargs[0] == 'explain'):
-            explaining = True
-            self.comargs = self.comargs[1:]
         matched = self.cognize(self.comargs)
         self.matched = matched
 
@@ -306,16 +248,12 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
         if matched:
             tokens, action, barewords, xtraopts = matched  # Where the help or whatever action gets recognized
 
-            if explaining:
-                self.report = self.do_explain(
-                    tokens, action, barewords, **xtraopts)
-            else:
-                try:
-                    self.action, self.barewords, self.xtraopts = action, barewords, xtraopts
-                    return 0
-                except Exception as err:
-                    LOGGER.exception('error unpacking cli?')
-                    self.report = self.crashed(str(err))
+            try:
+                self.action, self.barewords, self.xtraopts = action, barewords, xtraopts
+                return 0
+            except Exception as err:
+                LOGGER.exception('error unpacking cli?')
+                self.report = self.crashed(str(err))
         else:
             self.report = self.failed(
                 'Bad request due to no "matched".\ntry using "help" command?')
@@ -341,6 +279,37 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
         #         sys.exit(0)
         # elif run_mode == "gui":
         #     return {'status': 'success'}
+    
+    def run(self):
+        '''This goes beyond the initialization and runs the program'''
+        LOGGER.debug('\n\n(v) Running the actual executable --> %s', self.action)
+        xtraopts = self.xtraopts
+        # TODO: STARTHERE --> We run this action like this BUT in fasta.do_gc_content, for example, we use the self.conf to get the variables, not the
+        # arguments to the method.
+        # self.action(self.barewords, **xtraopts)
+        self.action()
+        # --------------------------------------------------
+        # -- If the action did not complete with a report, |
+        # -- this should be considered a crash!            |
+        # --------------------------------------------------
+        # TODO: Alter the below code to sort based off of CLI vs. GUI modes
+
+        LOGGER.debug('\n\n(vi): Running the final report')
+        if getattr(self, 'report', None) is None:
+            self.report = self.crashed("No report returned by action!")
+
+        form = self.conf.get('report.form', 'csv') # Change report form
+
+        if self.run_mode == "cli":
+            # Below is the culprite for the duplication!
+            LOGGER.info('📄 Report Generated:\n %s', self.report.formatted(form))
+            self.done()
+            if self.report.status.indicates_failure:
+                sys.exit(1)
+            else:
+                sys.exit(0)
+        elif self.run_mode == "gui":
+            return {'status': 'success'}
 
     def done(self):
         """
@@ -348,7 +317,8 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
         My default behavior is to do nothing; however,
         override my behavior if any additional "clean up" is needed after the app has run (and dispatched).
         """
-        pass
+        # Future
+        return None
 
     # -----------------------------------------------------------------
     # -- BEGIN completion methods                                     |
@@ -392,24 +362,6 @@ Contact for help: {self.default_config['maintenance-info']['contact']}
     # --------------------------------------------
     # -- BEGIN app operation, aka "do_*" methods |
     # --------------------------------------------
-
-    def do_explain(self, comwords, action, barewords, **kwargs):
-        '''Explain the action and context.'''
-        d = {}
-        d['invoke'] = {
-            'idiom': ' '.join(comwords),
-            'method': str(action),
-            'args': barewords,
-            'doc': action.__doc__
-        }
-        d['context'] = self.conf.toJDN()
-
-        doc = """
-		explaining "{}"
-		{}
-		""".format(" ".join(comwords), action.__doc__)
-
-        return self.succeeded(doc, d)
 
     def do_help(self, barewords, **kwargs):
         """Show all command patterns and their help messages"""

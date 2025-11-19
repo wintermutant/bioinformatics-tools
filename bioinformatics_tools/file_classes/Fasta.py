@@ -237,20 +237,16 @@ class Fasta(BioBase):
     #     self.succeeded(msg=f"All sequences:\n{data}", dex=data)
 
     @command
-    def do_gc_content(
-            self,
-            barewords,
-            precision: int = 2,
-            **kwargs):
+    def do_gc_content(self, precision: int = 2):
         '''Return the GC content of each sequence in the fasta file'''
-        precision = int(self.conf.get('precision', precision))
-        gcContent = {}
+        precision = int(self.conf.get('fasta.gc_content.precision', precision))
+        gc_content = {}
         for cnt, items in self.fastaKey.items():
             seq = items[1].upper()
             gc_count = seq.count('G') + seq.count('C')
             percent = round((gc_count) / len(seq), precision)
-            gcContent[cnt] = (items[0], percent)
-        data = gcContent
+            gc_content[cnt] = (items[0], percent)
+        data = gc_content
         self.succeeded(msg=f"GC Content per entry:\n{data}", dex=data)
 
     @command

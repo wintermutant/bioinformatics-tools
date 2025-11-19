@@ -22,15 +22,8 @@ import os
 import os.path
 import collections.abc as pycollections
 import json
-import datetime
 import fnmatch
-import logging
-
-try:
-    import yaml
-except:
-    pass
-
+import yaml
 
 # ------------------------------------
 # -- Check that we're using Python 3 |
@@ -297,7 +290,7 @@ class CxNode(object):
             file_content = Path(fname).read_text()
             blob = None
 
-            LOGGER.debug('Config content: \n' + file_content, extra={'config_file_content': file_content})
+            LOGGER.debug('Config content: \n %s', file_content)
 
             if form in JSONs:
                 blob = json.loads(file_content)
@@ -386,17 +379,17 @@ class CxNode(object):
         for token in tokens:
             LOGGER.debug(
                 "CxNode/sed state is {} working on key '{}' ingesting token '{}'".format(state, key, token))
-            if token.endswith((':', '!', '~', '+', '-')) or token.startswith('^'):
+            if token.endswith((':', '!', '~', '+', '-')):
                 state = 'SCANNING'
             if state == 'SCANNING':
                 # -- default to continuing the scanning state, unless otherwise set.
                 op = 'SCANNING'
-                if token[0] == '^':
-                    # -- load the file
-                    path = token[1:]
-                    self.load(path)
+                # if token[0] == '^':  DEPRECATED
+                #     # -- load the file
+                #     path = token[1:]
+                #     self.load(path)
 
-                elif token[-1] == ':':
+                if token[-1] == ':':
                     key = token[:-1]
                     op = 'SET'
 

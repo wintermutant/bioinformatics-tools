@@ -126,12 +126,9 @@ def command(fn_or_name=None, *, aliases: list[str] | None = None):
         fn.__cmd_name__ = cmd_name
         fn.__cmd_aliases__ = cmd_aliases
 
-        # Create wrapper that handles typer help and filters CLIX parameters
-        def wrapper(self, barewords, **kwargs):
-            import sys
-
+        def wrapper(self):
             # Check for --help in arguments
-            if '--help' in sys.argv or (barewords and '--help' in str(barewords)):
+            if '--help' in sys.argv:
                 try:
                     app(["--help"])
                 except SystemExit:
@@ -141,19 +138,7 @@ def command(fn_or_name=None, *, aliases: list[str] | None = None):
                     self.succeeded(msg=f"Help displayed for {cmd_name} command", dex={"action": "help", "command": cmd_name})
                 return
 
-            # Filter out CLIX internal parameters and extract typer defaults
-            processed_kwargs = {}
-            for key, value in kwargs.items():
-                # Skip the hardcoded CLIX xtraopt
-                if key == 'xtraopt':
-                    continue
-                # Extract actual values from typer OptionInfo objects
-                if hasattr(value, 'default'):
-                    processed_kwargs[key] = value.default
-                else:
-                    processed_kwargs[key] = value
-
-            return fn(self, barewords, **processed_kwargs)
+            return fn(self)
 
         # Copy attributes to wrapper
         wrapper.__typer_app__ = app
@@ -184,9 +169,9 @@ class BioBase(clix.App):
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
         print('Finished super init in BioBase')
         self.form = self.conf.get('report.form', 'prose')
-        LOGGER.debug(f'\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n{self.conf.show()}')
+        LOGGER.debug('\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n %s', self.conf.show())
         self.file = self.conf.get('file', None)
-        LOGGER.debug('Parsed Command Args:\ncomargs: %s\nactions: %s\nbarewords: %s', self.comargs, self.actions, self.barewords)
+        LOGGER.debug('Parsed Command Args:\ncomargs: %s\nactions: %s', self.comargs, self.actions)
 
         if not self.matched:
             LOGGER.info('%s \n', self.report.formatted(self.form))
@@ -197,13 +182,11 @@ class BioBase(clix.App):
             else:
                 sys.exit(0)
 
-        # Check for --help before file validation
+        # Check for --help before file validation: skip validation if so
         if '--help' in sys.argv:
-            # Skip file validation for --help
             self.file_path = None
             self.file_name = None
-        elif 'help' in self.matched[0]:  # If just running help, don't need to d
-            print('Running')
+        elif 'help' in self.matched[0]:  # If just running help, don't need to do anything
             self.run()
         elif self.file:
             self.file_path = pathlib.Path(self.file)
@@ -219,15 +202,15 @@ class BioBase(clix.App):
                 sys.exit(0)
         LOGGER.debug('#~~~~~~~~~~ Finished BioBase Init ~~~~~~~~~~#\n')
 
-    def clean_file_name(self) -> str:
+    def clean_file_name(self) -> pathlib.Path | None:
         '''
-        Always want our fastq file to end in .fastq.gz.
+        e.g. for standard file suffix - always want our fastq file to end in .fastq.gz.
         For example, if a file comes in as myfile.fg, it'll be renamed to myfile.fastq.gz
         Or, if a file is fastq.txt, it'll be renamed to myfile.fastq.gz
         '''
         if self.file_path is None:
             # Return a dummy value for --help mode
-            return "dummy-filename.txt"
+            return pathlib.Path("dummy-filename.txt")
 
         suffixes = self.file_path.suffixes
         self.basename = self.file_path.stem
@@ -291,7 +274,7 @@ class BioBase(clix.App):
             sys.exit(0)
     
     @command
-    def do_valid(self, barewords, **kwargs):
+    def do_valid(self):
         '''Check to see if the file is valid, meaning it has been parsed and the contents are correct'''
         response = self.valid
         self.succeeded(
