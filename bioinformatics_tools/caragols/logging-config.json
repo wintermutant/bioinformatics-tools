@@ -1,7 +1,0 @@
-{
-    "logging": {
-        "console_log_level": "INFO",
-        "directory": "~/.caragols/logs",
-        "use_user_subdir": true
-    }
-}

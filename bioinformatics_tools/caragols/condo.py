@@ -1,4 +1,5 @@
 """
+CONfiguration DOer
 caragols.condo
 
 I provide a nested mapping object, useful for configuration, etc.

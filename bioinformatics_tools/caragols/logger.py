@@ -1,22 +1,44 @@
+'''
+All things logging
+'''
+
 import getpass
-import json
 import logging.config
-import logging.handlers
+import shutil
 import sys
 from pathlib import Path
 
+import yaml
+
 LOG_HANDLERS: list[str]
-CONFIG_PATH = Path(__file__).parent / 'logging-config.json'
+
+LOGGING_CONFIG_TEMPLATE_PATH = Path(__file__).parent / 'logging-config.yaml'
+LOGGING_CONFIG_DEFAULT_PATH =  Path.home() / '.config' / 'bioinformatics-tools' / 'logging-config.yaml'
+
+def initialize_logging_config() -> Path:
+    '''Init config file is not found using the template and placing in home
+    This log file tells us where to place the logs and some other basic stuff, but mainly
+    where the log should be
+    #FUTURE: This can be configured by an admin so a groups log info can go to 1 spot
+    '''
+    if not LOGGING_CONFIG_DEFAULT_PATH.exists():
+        LOGGING_CONFIG_DEFAULT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(LOGGING_CONFIG_TEMPLATE_PATH, LOGGING_CONFIG_DEFAULT_PATH)
+    return LOGGING_CONFIG_DEFAULT_PATH
 
 def load_config():
-    config = json.loads(CONFIG_PATH.read_text())
-    logging_config = config['logging']
+    '''Open and initialize logging'''
+    logging_config_path = initialize_logging_config()
+    with open(logging_config_path) as f:
+        logging_config = yaml.safe_load(logging_config_path.read_text())
 
     log_dir = Path(logging_config['directory']).expanduser().absolute()
+
     if logging_config['use_user_subdir']:
         log_dir /= getpass.getuser()
     log_dir.mkdir(parents=True, exist_ok=True)
     console_log_level = logging_config['console_log_level']
+    
 
     root_log_config = {
         "version": 1,
@@ -75,7 +97,6 @@ def load_config():
     return root_log_config
 
 
-
 def config_logging_for_app():
     """(re)Configure the main logger for running as a CLI app
 
@@ -85,9 +106,10 @@ def config_logging_for_app():
     This allows us to still leverage the convenience of dictConfig
     """
     global LOGGER
-    log_config = load_config()
-    log_handlers = log_config['handlers'].keys()
+    log_config: dict = load_config()
+    log_handlers: list = log_config['handlers'].keys()
     log_config['loggers']['caragols']['handlers'] = log_handlers
+    print(log_config)
     logging.config.dictConfig(config=log_config)
     LOGGER = logging.getLogger('caragols')
 
