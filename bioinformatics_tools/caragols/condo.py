@@ -24,15 +24,12 @@ import os.path
 import collections.abc as pycollections
 import json
 import fnmatch
+import logging
 import yaml
 
-# ------------------------------------
-# -- Check that we're using Python 3 |
-# ------------------------------------
-assert (sys.version_info.major == 3)
+assert (sys.version_info.major == 3)  # Check python3
 
-
-from .logger import LOGGER
+LOGGER = logging.getLogger(__name__)
 
 class ftuple(tuple):
     """

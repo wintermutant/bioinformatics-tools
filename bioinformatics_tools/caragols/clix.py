@@ -7,17 +7,20 @@ The basic idea is to rely on JSON or YAML documents for default and/or complex c
 you can define; basically you can use the configuration file to customize anything.
 """
 import inspect
+import logging
 import os.path
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import yaml
 
 from bioinformatics_tools.caragols import carp, condo
 
-from .logger import LOGGER
+LOGGER = logging.getLogger(__name__)
 
 
 class App:
@@ -36,6 +39,22 @@ class App:
 
 
     def __init__(self, name=None, run_mode="cli", comargs: list = ['help'], filetype=None, **kwargs):
+        # Configure logging for CLI app (attaches handlers)
+        from .logger import config_logging_for_app
+        config_logging_for_app()
+
+        # Session tracking for log demarcation
+        self.session_id = str(uuid4())[:8]
+        self.session_start = datetime.now()
+
+        # Log session startup banner
+        separator = "=" * 80
+        LOGGER.debug("\n%s", separator)
+        LOGGER.debug("NEW SESSION: %s | Session ID: %s",
+                   self.session_start.strftime("%Y-%m-%d %H:%M:%S"), self.session_id)
+        LOGGER.debug("Command: %s", " ".join(sys.argv))
+        LOGGER.debug("%s", separator)
+
         LOGGER.debug('(i) Starting init for clix')
 
         self.filetype = filetype
@@ -130,7 +149,7 @@ class App:
             cls._template_config_path(),
         ]
 
-        LOGGER.info('Paths to check: %s', paths_to_check)
+        LOGGER.debug('Paths to check: %s', paths_to_check)
         for path in paths_to_check:
             if path and path.exists():
                 LOGGER.info('Using config file: %s', path)
@@ -197,7 +216,8 @@ class App:
             LOGGER.debug('Found confargs: %s', confargs)
             barewords = self.conf.sed(confargs)
             # TODO: We find the barewords and don't do anything with them for now?
-            LOGGER.info('Found barewords: %s\nConfiguration: %s', barewords, self.conf.show())
+            LOGGER.debug('Found barewords: %s', barewords)
+            LOGGER.debug('Configuration:\n%s', self.conf.show())
             return (tokens, action, barewords, xtraopts)
 
     # ----------------------------
@@ -302,7 +322,7 @@ class App:
 
         if self.run_mode == "cli":
             # Below is the culprite for the duplication!
-            LOGGER.info('📄 Report Generated:\n %s', self.report.formatted(form))
+            LOGGER.info('📄 Report Generated:\n%s', self.report.formatted(form))
             self.done()
             if self.report.status.indicates_failure:
                 sys.exit(1)
@@ -317,7 +337,17 @@ class App:
         My default behavior is to do nothing; however,
         override my behavior if any additional "clean up" is needed after the app has run (and dispatched).
         """
-        # Future
+        # Log session completion banner
+        session_end = datetime.now()
+        duration = (session_end - self.session_start).total_seconds()
+        separator = "=" * 80
+
+        LOGGER.debug("%s", separator)
+        LOGGER.debug("SESSION COMPLETED: %s | Session ID: %s",
+                   session_end.strftime("%Y-%m-%d %H:%M:%S"), self.session_id)
+        LOGGER.debug("Duration: %.2f seconds", duration)
+        LOGGER.debug("%s\n", separator)
+
         return None
 
     # -----------------------------------------------------------------

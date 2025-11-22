@@ -1,6 +1,7 @@
 from datetime import datetime
 import gzip
 import inspect
+import logging
 import mimetypes
 import pathlib
 import sys
@@ -8,7 +9,8 @@ import sys
 import typer
 
 from bioinformatics_tools.caragols import clix
-from bioinformatics_tools.caragols.clix import LOGGER
+
+LOGGER = logging.getLogger(__name__)
 
 MAIN_EXECUTABLE_NAME='dane' # TODO: This will have to change when we have more executables
 
@@ -165,9 +167,9 @@ class BioBase(clix.App):
     def __init__(self, file=None, detect_mode="medium", run_mode='cli', filetype=None) -> None:
         self.timestamp = datetime.now().strftime("%d%m%y-%H%M")
         self.detect_mode = detect_mode
-        print('Running in BioBase')
+        LOGGER.debug('Running in BioBase')
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
-        print('Finished super init in BioBase')
+        LOGGER.debug('Finished super init in BioBase')
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug('\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n %s', self.conf.show())
         self.file = self.conf.get('file', None)

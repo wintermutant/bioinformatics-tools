@@ -1,11 +1,14 @@
 import argparse
 import getpass
+import logging
 from pathlib import Path
 import sys
 
 import bioinformatics_tools
 from bioinformatics_tools.file_classes.Fasta import Fasta
-from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
+from bioinformatics_tools.caragols.logger import config_logging_for_app
+
+LOGGER = logging.getLogger(__name__)  # Creates logger named 'bioinformatics_tools.fastaTools.main'
 
 def main():
     config_logging_for_app()

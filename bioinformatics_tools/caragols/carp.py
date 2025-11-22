@@ -1,6 +1,4 @@
 """
-caragols.carp
-
 I implement reporting tools for the Common App Reporting Prototocol (CARP)
 """
 import operator

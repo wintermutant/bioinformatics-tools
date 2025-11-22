@@ -2,6 +2,7 @@
 Module for all things fasta
 '''
 import gzip
+import logging
 import pathlib
 from uuid import UUID, uuid4
 
@@ -9,8 +10,9 @@ import typer
 from pydantic import BaseModel, Field
 from pydantic_sqlite import DataBase
 
-from bioinformatics_tools.caragols.clix import LOGGER
 from bioinformatics_tools.file_classes.base_classes import BioBase, command
+
+LOGGER = logging.getLogger(__name__)
 
 
 class FastaRecord(BaseModel):
@@ -240,6 +242,7 @@ class Fasta(BioBase):
     def do_gc_content(self, precision: int = 2):
         '''Return the GC content of each sequence in the fasta file'''
         precision = int(self.conf.get('fasta.gc_content.precision', precision))
+        # LOGGER.info('Displaying something...\n')
         gc_content = {}
         for cnt, items in self.fastaKey.items():
             seq = items[1].upper()

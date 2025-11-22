@@ -6,13 +6,16 @@ import argparse
 import getpass
 import importlib
 import importlib.util
+import logging
 import os
 from pathlib import Path
 import subprocess
 import sys
 
 import bioinformatics_tools
-from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
+from bioinformatics_tools.caragols.logger import config_logging_for_app
+
+LOGGER = logging.getLogger(__name__)
 
 
 def get_available_scripts():

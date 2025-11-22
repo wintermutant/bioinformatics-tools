@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 LOG_HANDLERS: list[str]
+_logging_configured = False  # Guard to prevent duplicate configuration
 
 LOGGING_CONFIG_TEMPLATE_PATH = Path(__file__).parent / 'logging-config.yaml'
 LOGGING_CONFIG_DEFAULT_PATH =  Path.home() / '.config' / 'bioinformatics-tools' / 'logging-config.yaml'
@@ -46,7 +47,7 @@ def load_config():
         "formatters": {
             # https://docs.python.org/3/library/logging.html#logrecord-attributes
             "caragols_basicFormatter": {
-                "format": "[%(asctime)s %(levelname)s] - %(message)s",
+                "format": "[%(asctime)s %(levelname)s %(name)s] - %(message)s",
                 "datefmt": "%H:%M:%S",
             },
             "caragols_verboseFormatter": {
@@ -87,7 +88,7 @@ def load_config():
         "loggers": {
             # when used a library (python api), there should be no handlers configured, so users of the lib can configure logs as they wish
             # when used as an CLI / directly, we will add our specific handlers
-            "caragols": {
+            "bioinformatics_tools": {
                 "level": "DEBUG",
                 "handlers": [],
             },
@@ -105,13 +106,19 @@ def config_logging_for_app():
 
     This allows us to still leverage the convenience of dictConfig
     """
-    global LOGGER
+    global LOGGER, _logging_configured
+
+    # Prevent duplicate configuration
+    if _logging_configured:
+        return
+
     log_config: dict = load_config()
     log_handlers: list = log_config['handlers'].keys()
-    log_config['loggers']['caragols']['handlers'] = log_handlers
-    print(log_config)
+    # Add handlers to bioinformatics_tools logger (all modules inherit from this)
+    log_config['loggers']['bioinformatics_tools']['handlers'] = log_handlers
     logging.config.dictConfig(config=log_config)
-    LOGGER = logging.getLogger('caragols')
+    LOGGER = logging.getLogger('bioinformatics_tools')
+    _logging_configured = True
 
 logging.config.dictConfig(config=load_config())
-LOGGER = logging.getLogger('caragols')
+LOGGER = logging.getLogger('bioinformatics_tools')

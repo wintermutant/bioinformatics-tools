@@ -9,13 +9,16 @@ since we know what input and output to expect.
 '''
 import getpass
 import importlib
+import logging
 import os
 from pathlib import Path
 import sys
 
 # from Fasta import Fasta
 import bioinformatics_tools
-from bioinformatics_tools.caragols.logger import LOGGER, config_logging_for_app
+from bioinformatics_tools.caragols.logger import config_logging_for_app
+
+LOGGER = logging.getLogger(__name__)
 
 package_spec = importlib.util.find_spec("bioinformatics_tools.file_classes")
 package_path = package_spec.submodule_search_locations[0]
