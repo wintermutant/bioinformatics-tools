@@ -109,17 +109,21 @@ class Report:
         # NOTE: this is for making json logging config a bit easier. If this gets in the way, it can be removed
         return json.dumps(self.boxed())
 
-    @property
-    def flatten(self):
+    @staticmethod
+    def flatten(data_dict):
         """
-        Answers a tuple of the form ((keyname, keyval), ...) for each key in self.
+        Flattens a dictionary into a list of (key, value) tuples.
         """
-        return tuple([(str(k), self[k]) for k in self.allKeys])
+        if isinstance(data_dict, dict):
+            return [(str(k), v) for k, v in data_dict.items()]
+        return []
 
     def toDEX(self, opts=None):
+        '''Data EXchange'''
         return self.boxed(opts=opts)
 
     def toPROSE(self, **kwargs):
+        '''Human-readable, mainly for stdout/stderr'''
         return self.toMD(include_data_section=False)
 
     def toMD(self, **kwargs):
@@ -156,9 +160,9 @@ class Report:
         rows = self.toROWs()
 
         dst = io.StringIO()
-        with csv.writer(dst, quoting=csv.QUOTE_NONNUMERIC) as doc:
-            for row in rows:
-                csv.writerow(row)
+        writer = csv.writer(dst, quoting=csv.QUOTE_NONNUMERIC)
+        for row in rows:
+            writer.writerow(row)
 
         return dst.getvalue()
 
