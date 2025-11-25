@@ -14,6 +14,20 @@ LOGGER = logging.getLogger(__name__)
 
 MAIN_EXECUTABLE_NAME='dane' # TODO: This will have to change when we have more executables
 
+
+class ListHandler(logging.Handler):
+    '''Custom handler that stores formatted log strings in a list'''
+    def __init__(self):
+        super().__init__()
+        self.log_records = []
+        self.setFormatter(logging.Formatter(
+            '[%(asctime)s %(levelname)s %(name)s:%(funcName)s:%(lineno)d] - %(message)s',
+            datefmt='%Y-%m-%dT%H:%M:%S'
+        ))
+
+    def emit(self, record):
+        self.log_records.append(self.format(record))
+
 def get_global_cli_parameters():
     """
     Returns a list of global CLI parameters that should be available to all commands.
@@ -128,7 +142,7 @@ def command(fn_or_name=None, *, aliases: list[str] | None = None):
         fn.__cmd_name__ = cmd_name
         fn.__cmd_aliases__ = cmd_aliases
 
-        def wrapper(self):
+        def wrapper(self, *args, **kwargs):
             # Check for --help in arguments
             if '--help' in sys.argv:
                 try:
@@ -140,7 +154,7 @@ def command(fn_or_name=None, *, aliases: list[str] | None = None):
                     self.succeeded(msg=f"Help displayed for {cmd_name} command", dex={"action": "help", "command": cmd_name})
                 return
 
-            return fn(self)
+            return fn(self, *args, **kwargs)
 
         # Copy attributes to wrapper
         wrapper.__typer_app__ = app
@@ -167,6 +181,13 @@ class BioBase(clix.App):
     def __init__(self, file=None, detect_mode="medium", run_mode='cli', filetype=None) -> None:
         self.timestamp = datetime.now().strftime("%d%m%y-%H%M")
         self.detect_mode = detect_mode
+
+        # Session log handler - captures logs during this instance's lifetime
+        self.log_handler = ListHandler()
+        self.log_handler.setLevel(logging.INFO)
+        # Attach to root bioinformatics_tools logger to capture ALL module logs
+        logging.getLogger('bioinformatics_tools').addHandler(self.log_handler)
+
         LOGGER.debug('Running in BioBase')
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
         LOGGER.debug('Finished super init in BioBase')
