@@ -393,7 +393,7 @@ class App:
     # -- BEGIN app operation, aka "do_*" methods |
     # --------------------------------------------
 
-    def do_help(self, barewords, **kwargs):
+    def do_help(self, **kwargs):
         """Show all command patterns and their help messages"""
         doclines = []
         print(f'Dispatches:\n{self.dispatches}')

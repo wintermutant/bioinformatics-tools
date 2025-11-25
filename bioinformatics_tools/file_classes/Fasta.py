@@ -4,6 +4,7 @@ Module for all things fasta
 import gzip
 import logging
 import pathlib
+import sys
 from uuid import UUID, uuid4
 
 import typer
@@ -18,14 +19,22 @@ LOGGER = logging.getLogger(__name__)
 class FastaRecord(BaseModel):
     '''Class representing a single FASTA record'''
     uuid: UUID = Field(default_factory=uuid4, alias='uuid')
+    filename: str
     description: str
     sequence: str
 
 
+class DbLogRecord(BaseModel):
+    '''Additional mandatory log information that gets written as a table into the database'''
+    uuid: UUID = Field(default_factory=uuid4, alias='uuid')
+    file_name: str
+    file_path_original: str
+    logs: list[str]
+    notes: str
+
+
 class Fasta(BioBase):
-    '''
-    Class for Fasta Files
-    Want it to determine if it's gzip or not
+    '''Class for Fasta Files
     '''
     # known_extensions = ['.fna', '.fasta', '.fa']
     # known_compressions = ['.gz', '.gzip']
@@ -43,11 +52,11 @@ class Fasta(BioBase):
         if self.run_mode == 'cli':
             super().__init__(file=file, detect_mode=detect_mode, run_mode=run_mode, filetype='fasta')
         elif self.run_mode == 'module' and self.file:
-            LOGGER.debug('Running in Fasta class without super init')
+            LOGGER.debug('Not running in cli mode')
             self.file_path = pathlib.Path(self.file)
             self.file_name = self.file_path.name
         else:
-            import sys
+            LOGGER.warning('No file detected, triggering sys.exit within module...')
             sys.exit('Error: When running in module mode, a file must be provided')
        
         # --------------------------- Class-specific stuff --------------------------- #
@@ -79,8 +88,10 @@ class Fasta(BioBase):
         current_header = ''
         current_seq = ''
         cnt = 0
-
-        line = next(open_file)
+        try:
+            line = next(open_file)
+        except StopIteration:
+            return False
         while line:
             line = line.strip()
             if not line:
@@ -99,7 +110,7 @@ class Fasta(BioBase):
             else:
                 while line and not line.startswith('>'):
                     if not set(line).issubset(valid_chars):
-                        LOGGER.error(f'Line has invalid character...{line}')
+                        LOGGER.error('Line has invalid character: %s', line)
                         return False
                     else:
                         current_seq += line.strip()
@@ -115,23 +126,47 @@ class Fasta(BioBase):
 
     # Database stuff
     def to_pydantic(self) -> list[FastaRecord]:
-        '''Turn the fasta file into a valid pydanic model'''
-        return [FastaRecord(description=header, sequence=seq) for header, seq in self.fastaKey.values()]
-    
+        '''Turn the fasta file into a valid pydanic model
+        TODO: Add a checksum sometime'''
+        LOGGER.info('Filename: %s Filepath: %s full path: %s', self.file_name, self.file_path, self.file_path.resolve())
+        return [FastaRecord(filename=self.file_name, description=header, sequence=seq) for header, seq in self.fastaKey.values()]
+
+    def logs_to_pydantics(self, notes: str = '') -> DbLogRecord:
+        '''Convert session logs to a DbLogRecord for database insertion'''
+        return DbLogRecord(
+            file_name=self.file_name,
+            file_path_original=str(self.file_path.resolve()),
+            logs=self.log_handler.log_records,
+            notes=notes
+        )
+
     @command
-    def do_write_db(self, barewords, **kwargs):
-        '''Write the fasta records to a sqlite database'''
-        db_path = self.conf.get('db_path', f'fasta_records-{self.timestamp}.db')
+    def do_write_db(self, **kwargs):
+        '''Write the fasta records to a sqlite database
+        2 Steps (third for consideration?):
+        1) Write the contents for the database
+        2) Add in the log information
+        3)? Copy in the configuration?
+        '''
+        db_path = self.conf.get('fasta.write_db.db_path', f'fasta_records-{self.timestamp}.db')
         db = DataBase(db_path)
+
+        # Write fasta records
         records = self.to_pydantic()
         for record in records:
             db.add('fasta_records', record)
-        self.succeeded(msg=f"{len(records)} records written to database at {db_path}")
+
+        # Write session logs
+        notes = self.conf.get('notes', '')
+        log_record = self.logs_to_pydantics(notes=notes)
+        db.add('logs', log_record)
+
+        self.succeeded(msg=f"{len(records)} records and {len(log_record.logs)} log entries written to database at {db_path}")
 
     @command
-    def do_add_to_db(self, barewords, db_path: str = typer.Option(None),  **kwargs):
+    def do_add_to_db(self, db_path: str = typer.Option(None),  **kwargs):
         '''Add the fasta records to an existing sqlite database'''
-        db_path = self.conf.get('db_path', None)
+        db_path = self.conf.get('fasta.add_to_db.db_path', None)
         if not db_path:
             self.failed(msg='No db_path provided. Please use db_path: <path_to_db>')
         db = DataBase(db_path)
@@ -143,7 +178,7 @@ class Fasta(BioBase):
 
     # ~~~ Rewriting ~~~ #
     @command
-    def do_write_confident(self, barewords, **kwargs):
+    def do_write_confident(self, **kwargs):
         '''
         Here, we always want the same extension and compression: .fasta.gz
         We also want to ensure only ATGCN and each sequence is on 1 line
@@ -158,7 +193,7 @@ class Fasta(BioBase):
         output = pathlib.Path(output)
         if output.suffix in ['.gz', '.gzip']:
             with gzip.open(str(self.preferred_file_path), 'wt') as open_file:
-                for key, value in self.fastaKey.items():
+                for _, value in self.fastaKey.items():
                     open_file.write(f'>{value[0]}\n{value[1]}\n')
         else:
             with open(str(output), 'w', encoding='utf-8') as open_file:
@@ -168,7 +203,7 @@ class Fasta(BioBase):
         self.succeeded(msg=f"Wrote output file to {output}")
 
     @command
-    def do_write_table(self, barewords, **kwargs):
+    def do_write_table(self, **kwargs):
         '''Tabular output'''
         if not self.valid:
             response = 'File is not valid'
@@ -190,7 +225,7 @@ class Fasta(BioBase):
         self.succeeded(msg=f"Wrote output file to {output}", dex=response)
 
     @command
-    def do_write_binid(self, barewords, **kwargs):
+    def do_write_binid(self, **kwargs):
         # TODO: Change the name of this
         '''Create a bin ID file from the fasta file in the form: header,filename\n'''
         output = self.conf.get('output', None)
@@ -208,30 +243,32 @@ class Fasta(BioBase):
                     open_file.write(f'{value[0]},{self.file_name}\n')
         data = None
         self.succeeded(msg=f"Wrote the binID file to {output}", dex=data)
-        
 
     # ~~~ Common Properties ~~~ #
     @staticmethod
     def clean_header(header: str) -> str:
+        '''Remove headers initial > and replace spaces with _
+        Some programs don't like spaces in headers'''
         if header.startswith('>'):
             clean_header = header[1:]
+        else:
+            clean_header = header
         clean_header = clean_header.replace(' ', '_')
         return clean_header
 
     # PROPERTIES
     @command
-    def do_all_headers(self, barewords, **kwargs):
+    def do_all_headers(self, **kwargs):
         '''Return all headers to standard out'''
         data = [v[0] for k, v in self.fastaKey.items()]
         self.succeeded(msg=f"All headers:\n{data}", dex=data)
 
     @command
-    def do_all_seqs(self, barewords, **kwargs):
+    def do_all_seqs(self, **kwargs):
         '''Return all sequences to standard out'''
         data = [v[1] for k, v in self.fastaKey.items()]
         self.succeeded(msg=f"All sequences:\n{data}", dex=data)
-    
-    # TODO
+
     # @command
     # def do_annotate_data(self, argument: str = 'Dane'):
     #     '''Return all sequences to standard out'''
@@ -253,7 +290,7 @@ class Fasta(BioBase):
         self.succeeded(msg=f"GC Content per entry:\n{data}", dex=data)
 
     @command
-    def do_gc_content_total(self, barewords, precision: int = 2, **kwargs):
+    def do_gc_content_total(self, precision: int = 2, **kwargs) -> float | None:
         '''Return the average GC content across all sequences in the fasta file
         '''
         # Get precision from CLIX configuration (handles precision: 4 syntax)
@@ -269,22 +306,18 @@ class Fasta(BioBase):
             return data
         self.succeeded(msg=f"Total GC Content: {data}", dex=data)
 
-    # @command(aliases=['count seqs', 'num sequences'])
     @command
-    def do_total_seqs(
-        self,
-        barewords,
-        verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
-        **kwargs
-    ):
+    def do_total_seqs(self, **kwargs) -> int | None:
         '''Return the total number of sequences (entries) in the fasta file.'''
         data = len(self.fastaKey.keys())
+        LOGGER.info('KWARgs: %s', kwargs)
         if kwargs.get('internal_call', False):
             return data
         self.succeeded(msg=f"Total sequences: {data}", dex=data)
+        return None
 
     @command
-    def do_total_seq_length(self, barewords, **kwargs):
+    def do_total_seq_length(self, **kwargs):
         '''Return the total length of all sequences in the fasta file'''
         # TODO:  ignore_size: int = 0
         data = sum([len(v[1]) for k, v in self.fastaKey.items() ])
@@ -296,7 +329,6 @@ class Fasta(BioBase):
     @command
     def do_filter_seqlength(
         self,
-        barewords,
         min_length: int = typer.Option(2000, "--min-length", "-l", help="Minimum sequence length to keep"),
         output_file: str = typer.Option(None, "--output", "-o", help="Output file path"),
         **kwargs
@@ -319,7 +351,6 @@ class Fasta(BioBase):
     @command
     def do_n_largest_seqs(
         self,
-        barewords,
         n: int = typer.Option(10, "--count", "-n", help="Number of largest sequences to return"),
         output_file: str = typer.Option(None, "--output", "-o", help="Output file path"),
         **kwargs
@@ -339,10 +370,10 @@ class Fasta(BioBase):
                     break
                 writeline = f'>{header}\n{seq}\n'
                 open_file.write(writeline)
-        self.succeeded(msg=f'Success: File created', dex=None)
+        self.succeeded(msg='Success: File created', dex=None)
 
     @command
-    def do_seq_length(self, barewords, **kwargs):
+    def do_seq_length(self, **kwargs):
         '''Return the length of a specific sequence'''
         data = {(k, v[0]): len(v[1]) for k, v in self.fastaKey.items()}
         if kwargs.get('internal_call', False):
@@ -367,12 +398,12 @@ class Fasta(BioBase):
         data = results
         self.succeeded(msg=f"The following entries contained the subsequence:\n{data}", dex=data)
     
-    def do_basic_stats(self, barewords, **kwargs):
+    def do_basic_stats(self, **kwargs):
         '''Return basic statistics of the fasta file'''
         data = {
-            'Total Sequences': self.do_total_seqs(barewords, internal_call=True),
-            'Total Sequence Length': self.do_total_seq_length(barewords, internal_call=True),
-            'Total GC Content': self.do_gc_content_total(barewords, internal_call=True)
+            'Total Sequences': self.do_total_seqs(internal_call=True),
+            'Total Sequence Length': self.do_total_seq_length(internal_call=True),
+            'Total GC Content': self.do_gc_content_total(internal_call=True)
         }
         self.succeeded(msg=f"Basic statistics:\n{data}", dex=data)
 

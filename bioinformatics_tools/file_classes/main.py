@@ -24,7 +24,8 @@ package_spec = importlib.util.find_spec("bioinformatics_tools.file_classes")
 package_path = package_spec.submodule_search_locations[0]
 
 real_py_class_filenames = [f.rsplit('.', 1)[0] for f in os.listdir(package_path) if f.endswith('.py') and not f.startswith('__')]
-real_py_class_filenames = [x for x in real_py_class_filenames if x not in ['main', 'BaseClasses']]
+# real_py_class_filenames = [x for x in real_py_class_filenames if x not in ['main', 'BaseClasses']]
+real_py_class_filenames = [x for x in real_py_class_filenames if x == 'Fasta']
 file_type_identifiers = [f for f in real_py_class_filenames]  # TODO: Is this needed?
 
 

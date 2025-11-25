@@ -52,7 +52,7 @@ def load_config():
             },
             "caragols_verboseFormatter": {
                 "format":
-                    "[%(asctime)s %(levelname)s %(process)d %(name)s %(filename)s:%(funcName)s:%(lineno)d] - %(message)s",
+                    "[%(asctime)s %(levelname)s %(process)d %(filename)s:%(funcName)s:%(lineno)d] - %(message)s",
                 "datefmt": "%Y-%m-%dT%H:%M:%S%z",
             },
             "caragols_jsonFormatter": {
