@@ -38,7 +38,7 @@ class App:
         default_config = yaml.safe_load(default_config_template_path.read_text())
 
 
-    def __init__(self, name=None, run_mode="cli", comargs: list = ['help'], filetype=None, **kwargs):
+    def __init__(self, name=None, run_mode="cli", comargs: list = ['help'], filetype=None, match=True, **kwargs):
         # Configure logging for CLI app (attaches handlers)
         from .logger import config_logging_for_app
         config_logging_for_app()
@@ -60,6 +60,7 @@ class App:
         self.filetype = filetype
         self.run_mode = run_mode
         self.comargs = comargs
+        self.match_cmd_to_process = match
         self.actions = []
         self.dispatches = []
         self._name = name
@@ -182,8 +183,9 @@ class App:
     # ------------------------------
 
     @property
-    def idioms(self):
+    def idioms(self) -> list[tuple]:
         """
+        TODO: Make a data object for idioms
         I am the list of actions available in the form of [(gravity, tokens, action), ...]
         """
         idioms = []
@@ -191,7 +193,7 @@ class App:
             gravity = len(tokens)
             idioms.append((gravity, tokens, action))
         idioms = list(sorted(idioms, reverse=True))
-        LOGGER.debug('Created %i idioms', len(idioms))
+        LOGGER.debug('Created %i idioms\n%s', len(idioms), idioms)
         return idioms
 
     def cognize(self, comargs):
@@ -211,14 +213,14 @@ class App:
                 matched = True
                 break
 
+        confargs = comargs[gravity:]
+        barewords = self.conf.sed(confargs)
         if matched:
-            confargs = comargs[gravity:]
-            LOGGER.debug('Found confargs: %s', confargs)
-            barewords = self.conf.sed(confargs)
             # TODO: We find the barewords and don't do anything with them for now?
-            LOGGER.debug('Found barewords: %s', barewords)
-            LOGGER.debug('Configuration:\n%s', self.conf.show())
             return (tokens, action, barewords, xtraopts)
+        LOGGER.debug('Found confargs: %s', confargs)
+        LOGGER.debug('Found barewords: %s', barewords)
+        LOGGER.debug('Configuration:\n%s', self.conf.show())
 
     # ----------------------------
     # -- BEGIN app state methods |
@@ -274,6 +276,10 @@ class App:
             except Exception as err:
                 LOGGER.exception('error unpacking cli?')
                 self.report = self.crashed(str(err))
+        if not self.match_cmd_to_process:
+            pass  #TODO: Hack here for dane_wf to not worry about matching. Later we may want
+        # workflow.do_example and then have that be how we map commands to files, instead of the
+        # workflowmapper object in workflow_tools.main.py
         else:
             self.report = self.failed(
                 'Bad request due to no "matched".\ntry using "help" command?')

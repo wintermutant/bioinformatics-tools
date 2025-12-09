@@ -69,7 +69,7 @@ What filetypes are supported?
 --------------------------------------------
 
 There are default filetypes that are supported **and you can define your own as well!**
-To add your own filetype, please see :doc:`the contribution guide <../usage/contribution>`.
+To add your own filetype, please see :doc:`the contribution guide <../contribution>`.
 By default, you can see all the filetypes we currently support by running:
 
 .. code-block:: bash

@@ -2,9 +2,19 @@
 *.code-workspace
 *-VALIDATED*
 
+# Testing and mock
+*_mock*/
+
+# AI / Claude
+settings.local.json
+
 # Documentation
 ## sphinx
 _build*
+
+# Snakemake
+.snakemake*/
+
 
 # Byte-compiled / optimized / DLL files
 .venv/

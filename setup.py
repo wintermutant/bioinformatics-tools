@@ -53,8 +53,8 @@ setup(
     entry_points={
         'console_scripts': [
             'dane=bioinformatics_tools.file_classes.main:cli',
-            # 'fasta-tools=bioinformatics_tools.fastaTools.main:main'
-            'misc=bioinformatics_tools.misc_tools.main:cli'
+            'misc=bioinformatics_tools.misc_tools.main:cli',
+            'dane_wf=bioinformatics_tools.workflow_tools.main:cli',
             ],
         },
     scripts=glob.glob('bioinformatics_tools/misc_tools/*.sh')

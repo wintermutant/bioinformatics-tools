@@ -72,7 +72,7 @@ class Fasta(BioBase):
         self.valid_extension = self.is_known_extension()
         self.valid = self.is_valid()
 
-    def validate(self, open_file, mode="medium"):
+    def validate(self, open_file, mode="medium") -> bool:
         '''
         Validate the Fasta file and hydrate self.fastaKey, a dictionary of the fasta file
         in the form:
@@ -279,7 +279,6 @@ class Fasta(BioBase):
     def do_gc_content(self, precision: int = 2):
         '''Return the GC content of each sequence in the fasta file'''
         precision = int(self.conf.get('fasta.gc_content.precision', precision))
-        # LOGGER.info('Displaying something...\n')
         gc_content = {}
         for cnt, items in self.fastaKey.items():
             seq = items[1].upper()

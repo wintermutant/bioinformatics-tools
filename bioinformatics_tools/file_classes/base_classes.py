@@ -183,12 +183,15 @@ class BioBase(clix.App):
         self.detect_mode = detect_mode
 
         # Session log handler - captures logs during this instance's lifetime
+        # This is used to log info before the logger is officially setup in clix.App
         self.log_handler = ListHandler()
         self.log_handler.setLevel(logging.INFO)
         # Attach to root bioinformatics_tools logger to capture ALL module logs
         logging.getLogger('bioinformatics_tools').addHandler(self.log_handler)
 
         LOGGER.debug('Running in BioBase')
+
+        # ------------------------ Running base clix.App init ------------------------ #
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
         LOGGER.debug('Finished super init in BioBase')
         self.form = self.conf.get('report.form', 'prose')
