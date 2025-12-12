@@ -37,25 +37,14 @@ class WorkflowBase(clix.App):
     '''Base class for all workflows. Allows us to have access to config, logging, and reporting
     '''
     
-    def __init__(self, workflow_id, detect_mode="medium", run_mode="cli", match=False):
+    def __init__(self, workflow_id):
+        LOGGER.debug('Starting __init__ of WorkflowBase')
         self.workflow_id = workflow_id
-        self.file, self.detect_mode, self.run_mode=run_mode, detect_mode, run_mode
-
         self.timestamp = datetime.now().strftime("%d%m%y-%H%M")
-        self.detect_mode = detect_mode
-
-        # Session log handler - captures logs during this instance's lifetime
-        # This is used to log info before the logger is officially setup in clix.App
-        # Otherwise, couldn't log stuff before super().__init__() ... #shrug
-        self.log_handler = ListHandler()
-        self.log_handler.setLevel(logging.INFO)
-        # Attach to root bioinformatics_tools logger to capture ALL module logs
-        logging.getLogger('bioinformatics_tools').addHandler(self.log_handler)
 
         LOGGER.debug('Using the workflow id of %s', self.workflow_id)
 
-        if self.run_mode == 'cli':
-            super().__init__(file=self.file, run_mode=self.run_mode)
+        super().__init__()
     
     def get_workflow_dobject(self) -> WorkflowKey | None:
         '''Convert wf: example string to WorkflowKey object. Mapping stage'''

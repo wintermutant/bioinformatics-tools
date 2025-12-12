@@ -197,9 +197,8 @@ class BioBase(clix.App):
         self.form = self.conf.get('report.form', 'prose')
         LOGGER.debug('\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n %s', self.conf.show())
         self.file = self.conf.get('file', None)
-        LOGGER.debug('Parsed Command Args:\ncomargs: %s\nactions: %s', self.comargs, self.actions)
 
-        if not self.matched:
+        if not self.matched_dispatch:
             LOGGER.info('%s \n', self.report.formatted(self.form))
             self.done()
             #TODO: sys.exit should be replaced with a report.
@@ -212,7 +211,7 @@ class BioBase(clix.App):
         if '--help' in sys.argv:
             self.file_path = None
             self.file_name = None
-        elif 'help' in self.matched[0]:  # If just running help, don't need to do anything
+        elif 'help' in self.matched_dispatch.tokens[0]:  # If just running help, don't need to do anything
             self.run()
         elif self.file:
             self.file_path = pathlib.Path(self.file)
