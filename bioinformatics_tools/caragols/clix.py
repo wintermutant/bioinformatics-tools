@@ -131,6 +131,7 @@ class App:
         ]
         if cl_config := cls._passed_config_file():
             config_paths.append(cl_config)
+        LOGGER.debug('config paths: %s', config_paths)
         return config_paths
 
     @classmethod
@@ -139,11 +140,10 @@ class App:
         config_files = []
         for path in cls._get_config_search_paths():
             if path and path.exists():
-                LOGGER.info('Config (%s) exists', path)
                 config_files.append(path)
         if not config_files:
             LOGGER.warning('No configuration files found!')
-        LOGGER.info('Found the following config files: %s', config_files)
+        LOGGER.debug('Found the following config files: %s', config_files)
         return config_files
 
     def configure(self):

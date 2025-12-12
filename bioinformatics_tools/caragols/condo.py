@@ -307,8 +307,7 @@ class CxNode(object):
             if blob is not None:
                 self.update(blob)
         else:
-            LOGGER.error(
-                'CxNode/read: I cannot find the specified file: %s' % fname)
+            LOGGER.error('CxNode/read: I cannot find the specified file: %s', fname)
 
         return self
 
@@ -359,8 +358,9 @@ class CxNode(object):
 
     def sed(self, tokens):
         """
+        #TODO Test this a bit and get working. Really like this!
+        
         Interpet the given list of tokens as an edit stream (aka "sed").
-
         ^file (LOAD) reads the given file name into the configuration
         key: (SET) sets a nested key to some value
         key+ (SADD) adds a value to the key (set semantics)
@@ -376,7 +376,7 @@ class CxNode(object):
 
         for token in tokens:
             LOGGER.debug(
-                "CxNode/sed state is {} working on key '{}' ingesting token '{}'".format(state, key, token))
+                "CxNode/sed state is %s working on key %s ingesting token %s", state, key, token)
             if token.endswith((':', '!', '~', '+', '-')):
                 state = 'SCANNING'
             if state == 'SCANNING':

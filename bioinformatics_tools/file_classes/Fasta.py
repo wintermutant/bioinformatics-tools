@@ -50,7 +50,7 @@ class Fasta(BioBase):
     def __init__(self, file=None, detect_mode="medium", run_mode='cli') -> None:
         self.file, self.detect_mode, self.run_mode = file, detect_mode, run_mode
         if self.run_mode == 'cli':
-            super().__init__(file=file, detect_mode=detect_mode, run_mode=run_mode, filetype='fasta')
+            super().__init__(detect_mode=detect_mode, run_mode=run_mode, filetype='fasta')
         elif self.run_mode == 'module' and self.file:
             LOGGER.debug('Not running in cli mode')
             self.file_path = pathlib.Path(self.file)

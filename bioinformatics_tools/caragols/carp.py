@@ -1,12 +1,11 @@
 """
 I implement reporting tools for the Common App Reporting Prototocol (CARP)
 """
-import operator
-import io
 import csv
+import io
 import json
+import operator
 import traceback
-
 import yaml
 
 

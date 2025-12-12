@@ -1,3 +1,15 @@
+'''base class and utilities for i/o (file classes)
+The idea is you can add a new module, NewFileType.py, then create a class that inherits from clix.App
+Any do_* methods will automatically become command line tools
+class NewFileType(clix.App)
+def do_something_fun(self):
+    print('Hi!)
+def do_something_mean(self):
+    print('You are stinky!')
+Above gets parsed and CLI finds new type: newfiletype so you can run the commands:
+$ dane something fun type: newfiletype
+$ dane something mean type: newfiletype
+'''
 from datetime import datetime
 import gzip
 import inspect
@@ -9,6 +21,7 @@ import sys
 import typer
 
 from bioinformatics_tools.caragols import clix
+from bioinformatics_tools.caragols.session import SessionLogger
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +30,7 @@ MAIN_EXECUTABLE_NAME='dane' # TODO: This will have to change when we have more e
 
 class ListHandler(logging.Handler):
     '''Custom handler that stores formatted log strings in a list'''
+    #TODO: Move to logger.py
     def __init__(self):
         super().__init__()
         self.log_records = []
@@ -39,17 +53,6 @@ def get_global_cli_parameters():
             str,
             typer.Option(None, "--config-file", help="Path to configuration file")
         ),
-        # Add more global parameters here as needed:
-        # (
-        #     'verbose_logging',
-        #     bool,
-        #     typer.Option(False, "--verbose-logging", help="Enable verbose logging")
-        # ),
-        # (
-        #     'dry_run',
-        #     bool,
-        #     typer.Option(False, "--dry-run", help="Show what would be done without executing")
-        # ),
     ]
 
 def add_global_parameters_to_signature(sig, global_params):
@@ -173,33 +176,22 @@ def command(fn_or_name=None, *, aliases: list[str] | None = None):
 
 class BioBase(clix.App):
     '''
-    Base class for biological data classes.
+    Base class for all file classes. This is more about shared methods versus initialization
     '''
     known_compressions = ['.gz', '.gzip']
     known_extensions = []
 
-    def __init__(self, file=None, detect_mode="medium", run_mode='cli', filetype=None) -> None:
-        self.timestamp = datetime.now().strftime("%d%m%y-%H%M")
+    def __init__(self, detect_mode="medium", run_mode='cli', filetype=None) -> None:
         self.detect_mode = detect_mode
-
-        # Session log handler - captures logs during this instance's lifetime
-        # This is used to log info before the logger is officially setup in clix.App
-        self.log_handler = ListHandler()
-        self.log_handler.setLevel(logging.INFO)
-        # Attach to root bioinformatics_tools logger to capture ALL module logs
-        logging.getLogger('bioinformatics_tools').addHandler(self.log_handler)
-
-        LOGGER.debug('Running in BioBase')
 
         # ------------------------ Running base clix.App init ------------------------ #
         super().__init__(run_mode=run_mode, name=MAIN_EXECUTABLE_NAME, filetype=filetype)
-        LOGGER.debug('Finished super init in BioBase')
-        self.form = self.conf.get('report.form', 'prose')
-        LOGGER.debug('\n#~~~~~~~~~~ Starting BioBase Init ~~~~~~~~~~#\nBioBase:\n %s', self.conf.show())
+        SessionLogger.log_header_section(LOGGER, f"Starting Biobase Init with conf:\n{self.conf.show()}")
         self.file = self.conf.get('file', None)
 
+        # TODO: Don't like returns nested in here
         if not self.matched_dispatch:
-            LOGGER.info('%s \n', self.report.formatted(self.form))
+            LOGGER.info('%s \n', self.report.formatted(self.conf.get('report.form')))
             self.done()
             #TODO: sys.exit should be replaced with a report.
             if self.report.status.indicates_failure:
@@ -225,7 +217,7 @@ class BioBase(clix.App):
                 sys.exit(1)
             else:
                 sys.exit(0)
-        LOGGER.debug('#~~~~~~~~~~ Finished BioBase Init ~~~~~~~~~~#\n')
+        SessionLogger.log_header_section(LOGGER, 'Finished Biobase Init')
 
     def clean_file_name(self) -> pathlib.Path | None:
         '''
@@ -291,7 +283,7 @@ class BioBase(clix.App):
         LOGGER.error(message)
         self.failed(
             msg=f"{message}", dex=message)
-        LOGGER.info('%s \n', self.report.formatted(self.form))
+        LOGGER.info('\n%s', self.report.formatted(self.form))
         self.done()
         if self.report.status.indicates_failure:
             sys.exit(1)

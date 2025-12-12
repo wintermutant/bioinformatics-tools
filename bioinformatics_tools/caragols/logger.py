@@ -7,8 +7,9 @@ import logging.config
 import shutil
 import sys
 from pathlib import Path
-
 import yaml
+
+import bioinformatics_tools
 
 LOG_HANDLERS: list[str]
 _logging_configured = False  # Guard to prevent duplicate configuration
@@ -98,6 +99,14 @@ def load_config():
     return root_log_config
 
 
+startup_info = {
+    'cwd': Path.cwd(),
+    'user': getpass.getuser(),
+    'argv': sys.argv,
+    'package_version': bioinformatics_tools.__version__
+}
+
+
 def config_logging_for_app():
     """(re)Configure the main logger for running as a CLI app
 
@@ -118,6 +127,7 @@ def config_logging_for_app():
     log_config['loggers']['bioinformatics_tools']['handlers'] = log_handlers
     logging.config.dictConfig(config=log_config)
     LOGGER = logging.getLogger('bioinformatics_tools')
+    LOGGER.debug('\nStartup: %s\n', startup_info)
     _logging_configured = True
 
 logging.config.dictConfig(config=load_config())

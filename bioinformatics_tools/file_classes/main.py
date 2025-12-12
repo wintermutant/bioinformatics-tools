@@ -7,15 +7,11 @@ of what the process looks like.
 The natural language description of the pipeline would be hard-coded
 since we know what input and output to expect.
 '''
-import getpass
 import importlib
 import logging
 import os
-from pathlib import Path
 import sys
 
-# from Fasta import Fasta
-import bioinformatics_tools
 from bioinformatics_tools.caragols.logger import config_logging_for_app
 
 LOGGER = logging.getLogger(__name__)
@@ -69,25 +65,19 @@ def find_file_type(args: list) -> None | str:
     return type_
 
 
+# def cli(Session):  #TODO: Inherit a method for CLI to make it easier to init & config app stuff
 def cli():
     '''Command line interface for the script.
     '''
-    # Step 0 - Configure Logging
+    # Step 0 - Configure/init logging
     config_logging_for_app()
-    startup_info = {
-        'cwd': Path.cwd(),
-        'user': getpass.getuser(),
-        'argv': sys.argv,
-        'package_version': bioinformatics_tools.__version__
-    }
-    LOGGER.debug('\nStartup: %s\n', startup_info) # user, cwd, sys.argv, app version
 
     # Step 1 - Parse command line for "type"
     matched = False
     type_ = find_file_type(sys.argv)
     alias_to_module = match_alias_to_module()
     LOGGER.debug('Recognize file type: %s', type_)
-    # Step 2 - Parse command line for "available programs"
+    # Step 2 - Match command line to available programs (i.e., type: fasta)
     if type_:
         for module_str, type_identifier in alias_to_module.items():
             if type_.lower() in type_identifier:
@@ -107,7 +97,7 @@ def cli():
                     sys.exit(1)  #TODO: Show a report here
                 # Controlling the execution of the class
                 data = CurrentClass()  # Shows config
-                if not data.valid:
+                if not data.valid:  #TODO: Nest this inside of data.run()
                     LOGGER.debug('File provided failed validation test')
                     data.file_not_valid_report()
                 # Executing the Class

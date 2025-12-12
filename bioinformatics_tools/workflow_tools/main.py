@@ -3,7 +3,6 @@ Command line entrypoint for workflows
 TODO: Need to match the test.smk to the command line dane_wf test, not the type
 '''
 import logging
-import os
 import sys
 
 from bioinformatics_tools.caragols.logger import config_logging_for_app
@@ -34,12 +33,6 @@ def cli():
     '''
     # Step 0 - Configure Logging
     config_logging_for_app()
-    startup_info = {
-        'cwd': os.getcwd(),
-        'user': os.getlogin(),
-        'argv': sys.argv,
-    }
-    LOGGER.debug('Starting workflow_tools with info: %s', startup_info)
 
     # -------------------------- Step 1 - Find the type -------------------------- #
     wf = find_wf(sys.argv)
