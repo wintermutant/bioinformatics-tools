@@ -248,15 +248,15 @@ class App:
     
     def run(self):
         '''This goes beyond the initialization and runs the program'''
-        LOGGER.debug('\n\n(v) Running the actual executable --> %s', self.action)
         # TODO: STARTHERE --> We run this action like this BUT in fasta.do_gc_content, for example, we use the self.conf to get the variables, not the
         # arguments to the method.
         if self.matched_dispatch:
-            self.matched_dispatch.action()
+            self.matched_dispatch.action()  # Running the do_ method we found
         # Each do_ method should end with a self.succeeded() message and self.failed() if not
 
         SessionLogger.log_header_section(LOGGER, "(vi): Running the final report")
         if getattr(self, 'report', None) is None:  # Report generates from do_ method
+            LOGGER.warning('getattr(report) is none!')
             self.report = self.crashed("No report returned by action!")
 
         form = self.conf.get('report.form', 'prose') # Change report form

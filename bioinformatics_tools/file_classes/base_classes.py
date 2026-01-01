@@ -10,12 +10,14 @@ Above gets parsed and CLI finds new type: newfiletype so you can run the command
 $ dane something fun type: newfiletype
 $ dane something mean type: newfiletype
 '''
-from datetime import datetime
+from contextlib import redirect_stdout
 import gzip
+import io
 import inspect
 import logging
 import mimetypes
 import pathlib
+import re
 import sys
 
 import typer
@@ -44,15 +46,16 @@ class ListHandler(logging.Handler):
 
 def get_global_cli_parameters():
     """
+    #FUTURE
     Returns a list of global CLI parameters that should be available to all commands.
     Each parameter is a tuple of (name, annotation, default_value).
     """
     return [
-        (
-            'config_file',
-            str,
-            typer.Option(None, "--config-file", help="Path to configuration file")
-        ),
+        # (
+        #     'config_file',
+        #     str,
+        #     typer.Option(None, "--config-file", help="Path to configuration file")
+        # ),
     ]
 
 def add_global_parameters_to_signature(sig, global_params):
@@ -148,10 +151,28 @@ def command(fn_or_name=None, *, aliases: list[str] | None = None):
         def wrapper(self, *args, **kwargs):
             # Check for --help in arguments
             if '--help' in sys.argv:
+                
+
+                # Capture help output
+                help_buffer = io.StringIO()
                 try:
-                    app(["--help"])
+                    with redirect_stdout(help_buffer):
+                        app(["--help"])
                 except SystemExit:
                     pass
+
+                # Transform help text: replace --option with option:
+                help_text = help_buffer.getvalue()
+                # Replace patterns like "--precision" or "--min-length" with "precision:" or "min-length:"
+                help_text = re.sub(r'--([a-z0-9-]+)', r'\1:', help_text)
+                # Replace short options like "-l" with corresponding text
+                help_text = re.sub(r'\s+-([a-z])\s+', r' ', help_text)
+                # Update section headers (handle both with and without colons, and with box drawing characters)
+                help_text = re.sub(r'Options:?(\s|─)', r'Parameters (use key: value syntax):\1', help_text)
+                help_text = help_text.replace('[OPTIONS]', '[PARAMETERS]')
+                help_text = help_text.replace('OPTIONS', 'PARAMETERS')
+
+                print(help_text)
 
                 if hasattr(self, 'succeeded'):
                     self.succeeded(msg=f"Help displayed for {cmd_name} command", dex={"action": "help", "command": cmd_name})
@@ -279,11 +300,12 @@ class BioBase(clix.App):
             return False
     
     def file_not_valid_report(self):
+        '''default report when file is not valid'''
         message = 'File is not valid according to validation'
         LOGGER.error(message)
         self.failed(
             msg=f"{message}", dex=message)
-        LOGGER.info('\n%s', self.report.formatted(self.form))
+        LOGGER.info('\n%s', self.report.formatted(self.conf.get('report.form', 'prose')))
         self.done()
         if self.report.status.indicates_failure:
             sys.exit(1)

@@ -358,8 +358,6 @@ class CxNode(object):
 
     def sed(self, tokens):
         """
-        #TODO Test this a bit and get working. Really like this!
-        
         Interpet the given list of tokens as an edit stream (aka "sed").
         ^file (LOAD) reads the given file name into the configuration
         key: (SET) sets a nested key to some value
@@ -376,16 +374,15 @@ class CxNode(object):
 
         for token in tokens:
             LOGGER.debug(
-                "CxNode/sed state is %s working on key %s ingesting token %s", state, key, token)
-            if token.endswith((':', '!', '~', '+', '-')):
+                "CxNode/sed --> token: %s | state: %s | key: %s", token, state, key)
+            if token.endswith((':', '!', '~', '+', '-', '^')):
                 state = 'SCANNING'
             if state == 'SCANNING':
-                # -- default to continuing the scanning state, unless otherwise set.
-                op = 'SCANNING'
-                # if token[0] == '^':  DEPRECATED
-                #     # -- load the file
-                #     path = token[1:]
-                #     self.load(path)
+                LOGGER.debug('SCANNING %s...', token)
+                op = None
+                if token[-1] == '^':
+                    path = token[:-1]
+                    self.load(path)
 
                 if token[-1] == ':':
                     key = token[:-1]
@@ -426,19 +423,16 @@ class CxNode(object):
                 op = 'SCANNING'
 
             elif state == 'SADD':
-                curval = self[key] if (key in self) else []
-
-                if isinstance(curval, pycollections.MutableSequence):
-                    if token not in self.get(key):
-                        self[key].append(token)
-
-                elif isinstance(curval, pycollections.MutableSet):
-                    self[key].add(token)
-
+                if key not in self:
+                    self[key] = set()
                 else:
-                    self[key] = [curval, token]
-
-                op = 'SCANNING'
+                    curval = self[key]
+                    if not isinstance(curval, set):
+                        if isinstance(curval, (list, tuple)):
+                            self[key] = set(curval)
+                        else:
+                            self[key] = {curval}
+                self[key].add(token)
 
             elif state == 'BADD':
                 self[key] = [] if not (key in self) else self[key]
@@ -456,8 +450,6 @@ class CxNode(object):
                     self[key].append(token)
                 else:
                     self[key] = [curval, token]
-
-                # op = 'SCANNING'
 
             elif state == 'SREM':
                 if key in self:
