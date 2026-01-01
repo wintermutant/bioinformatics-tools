@@ -64,7 +64,9 @@ class Fasta(BioBase):
         self.preferred_extension = '.fasta.gz'
 
         # ------------------------------- Custom stuff ------------------------------- #
-        self.fastaKey: dict[int, tuple[str, str]] = {}
+        self.fastaKey: dict[int, tuple[str, str]] = {}  #TODO change this to a generic
+                                # eventually each class can have a data model with a generic
+                                # name and point to a Pydantic model
         self.written_output = []
 
         # --------------------------- Filename and Content Validation stuff --------------------------- #   
@@ -276,10 +278,13 @@ class Fasta(BioBase):
     #     self.succeeded(msg=f"All sequences:\n{data}", dex=data)
 
     @command
-    def do_gc_content(self, precision: int = 2):
+    def do_gc_content(self, precision: int = 2, **kwargs):
         '''Return the GC content of each sequence in the fasta file'''
-        precision = int(self.conf.get('fasta.gc_content.precision', precision))
+        # precision = int(self.conf.get('fasta.gc_content.precision', precision))
+        precision = 2
         gc_content = {}
+        print('INSIDEEE and outside')
+        print(f'Self.fastakey.items(): {self.fastaKey}')
         for cnt, items in self.fastaKey.items():
             seq = items[1].upper()
             gc_count = seq.count('G') + seq.count('C')
@@ -287,13 +292,15 @@ class Fasta(BioBase):
             gc_content[cnt] = (items[0], percent)
         data = gc_content
         self.succeeded(msg=f"GC Content per entry:\n{data}", dex=data)
+        if kwargs.get('origin') == 'api':
+            return {'results': data}
 
     @command
-    def do_gc_content_total(self, precision: int = 2, **kwargs) -> float | None:
+    def do_gc_content_total(self, precision: int = 2, **kwargs) -> dict | None:
         '''Return the average GC content across all sequences in the fasta file
         '''
         # Get precision from CLIX configuration (handles precision: 4 syntax)
-        precision = int(self.conf.get('precision', precision))
+        # precision = int(self.conf.get('precision', precision))
         values = []
         for _, items in self.fastaKey.items():
             seq = items[1].upper()
@@ -301,8 +308,9 @@ class Fasta(BioBase):
             gc_content = (gc_count / len(seq)) * 100 if len(seq) > 0 else 0
             values.append(round(gc_content, precision))
         data = round(sum(values) / len(values), precision) if values else 0
-        if kwargs.get('internal_call', False):
-            return data
+        if kwargs.get('origin') == 'api':
+            print('Calling from API...')
+            return {'results': data}
         self.succeeded(msg=f"Total GC Content: {data}", dex=data)
 
     @command

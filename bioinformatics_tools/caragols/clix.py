@@ -43,7 +43,7 @@ class App:
     config_filename = 'config.yaml'  # FIXME:
     default_config_path = Path.home() / '.config' / 'bioinformatics-tools' / config_filename
 
-    def __init__(self, name=None, run_mode="cli", comargs: list = ['help'], filetype=None, match=True, **kwargs):
+    def __init__(self, name=None, run_mode="cli", filetype=None, match=True):
         '''config, logging, and command line parsing'''
         # Session tracking for log demarcation
         self.session_id = str(uuid4())[:8]
@@ -55,7 +55,7 @@ class App:
         self._name = name
         self.filetype = filetype
         self.run_mode = run_mode
-        self.comargs = comargs
+        self.comargs = ['help']  #TODO get rid  of this
         self.match_cmd_to_process = match
         self.report: carp.Report | None = None
         self.conf: condo.Condex

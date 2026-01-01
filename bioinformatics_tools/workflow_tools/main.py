@@ -34,20 +34,9 @@ def cli():
     # Step 0 - Configure Logging
     config_logging_for_app()
 
-    # -------------------------- Step 1 - Find the type -------------------------- #
-    wf = find_wf(sys.argv)
-    LOGGER.debug('Running type: %s', wf)
-
-    if not wf:
-        sys.exit('Did not add a proper wf: <example> argument')
-
-    # -------------------- Step 2 - Match the type to a module ------------------- #
-    # alias_to_module: dict = match_alias_to_module()  # FIXME: Not working
-
-    #TODO: Better to match and build the command, then execute versus the logic inside this looping of the workflow_key
-
-    data = WorkflowBase(workflow_id=wf)
-    data.run_workflow()
+    data = WorkflowBase()
+    # data.run_workflow()
+    data.run()
     return None
 
     # if any(arg in sys.argv for arg in ("help", "Help", "HELP")):

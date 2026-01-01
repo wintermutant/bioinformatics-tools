@@ -40,6 +40,7 @@ setup(
     ],
     install_requires=[
         'bio',
+        'fastapi',
         'matplotlib',
         'numpy',
         'pandas',
@@ -48,6 +49,7 @@ setup(
         'pyyaml==6.*',
         'python-json-logger==2.0.7',
         'typer',
+        'uvicorn'
     ],
     python_requires='>=3.11',
     entry_points={
@@ -55,6 +57,7 @@ setup(
             'dane=bioinformatics_tools.file_classes.main:cli',
             'misc=bioinformatics_tools.misc_tools.main:cli',
             'dane_wf=bioinformatics_tools.workflow_tools.main:cli',
+            'dane-api=bioinformatics_tools.api.main:serve',
             ],
         },
     scripts=glob.glob('bioinformatics_tools/misc_tools/*.sh')
