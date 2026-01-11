@@ -1,5 +1,5 @@
 
-__version__ = '0.2.0'
+__version__ = '0.3.1b1'
 
 
 main_help = "A suite of tools used during various bioinformatic analyses."

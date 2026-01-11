@@ -1,62 +1,40 @@
 """
-Simple 3-rule workflow demonstrating container execution.
-
-Usage:
-    snakemake --cores 1
+Simple 2-rule workflow demonstrating container execution.
 """
 
-# Input file
-SAMPLE = "test_data/example"
+
+print(f"DEBUG: Full config dict: {config}")
+print(f"DEBUG: input_fasta = {config.get('input_fasta', 'NOT_SET')}")
+print(f"DEBUG: output_fasta = {config.get('output_fasta', 'NOT_SET')}")
+
 
 rule all:
     input:
         "results/done.txt"
 
-rule run_main:
-    """Run main.py with the python-example container"""
-    input:
-        fasta="{sample}.fasta"
-    output:
-        "results/{sample}_main.txt"
-    shell:
-        """
-        python main.py python-example Dane > {output}
-        echo "Processed {input.fasta}" >> {output}
-        """
-
-rule run_prodigal:
-    """Run prodigal version check"""
-    input:
-        "results/{sample}_main.txt"
-    output:
-        "results/{sample}_prodigal.txt"
-    shell:
-        """
-        apptainer.lima exec prodigal.sif prodigal --version > {output} 2>&1
-        echo "Input from previous step: {input}" >> {output}
-        """
 
 rule run_prodigal_container:
     """Run prodigal with snakemake containerization"""
     input:
-        f"{workflow.basedir}/example.fasta"
+        config.get('input_fasta', 'poopballs.fasta')
     output:
-        "example-output.txt"
-    container: "~/.cache/bioinformatics-tools/prodigal.sif"  # issue here
+        config.get('output_fasta', 'poopydiapy.out')
+    threads: config.get('prodigal_threads', 1)
+    container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
         """
-        prodigal --version & touch {output}
+        prodigal -h & touch {output}
         """
 
-
-rule final_report:
-    """Final Python script to say 'all done!'"""
+rule finalize:
+    """Create done file from prodigal output"""
     input:
-        "results/{sample}_prodigal.txt"
+        config.get('output_fasta', 'poopydiapy.out')
     output:
         "results/done.txt"
     shell:
         """
-        python -c "print('All done! Pipeline completed successfully.')" > {output}
-        echo "Processed: {input}" >> {output}
+        mkdir -p results
+        echo "Workflow completed! Input processed: {input}" > {output}
+        cat {input} >> {output}
         """

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bioinformatics-tools"
+version = "0.3.1b3"
+description = "Simple tools for common bioinformatic use-cases"
+readme = "README.md"
+authors = [
+    { name = "Dane Deemer", email = "dane@liminalbios.com" }
+]
+requires-python = ">=3.11"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "bio",
+    "fastapi",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "paramiko",
+    "pymongo",
+    "pydantic>=2.0,<3.0",
+    "pydantic-sqlite>=0.0,<1.0",
+    "pyyaml>=6.0,<7.0",
+    "python-json-logger==2.0.7",
+    "python-multipart",
+    "snakemake==9.14.5",
+    "snakemake-interface-common==1.22.0",
+    "snakemake-interface-executor-plugins==9.3.9",
+    "snakemake-interface-logger-plugins==2.0.0",
+    "snakemake-interface-report-plugins==1.3.0",
+    "snakemake-interface-scheduler-plugins==2.0.2",
+    "snakemake-interface-storage-plugins==4.3.2",
+    "snakemake-executor-plugin-slurm",
+    "typer",
+    "uvicorn"
+]
+
+[project.urls]
+Homepage = "https://github.com/Diet-Microbiome-Interactions-Lab/GeneralTools"
+
+[project.scripts]
+dane = "bioinformatics_tools.file_classes.main:cli"
+misc = "bioinformatics_tools.misc_tools.main:cli"
+dane_wf = "bioinformatics_tools.workflow_tools.main:cli"
+dane-api = "bioinformatics_tools.api.main:serve"
+
+[tool.setuptools]
+packages = { find = {} }
+
+[tool.setuptools.package-data]
+"*" = ["caragols/*.yaml", "caragols/*.json"]
+"bioinformatics_tools.misc_tools" = ["*.sh"]
+"bioinformatics_tools.workflow_tools" = ["*.smk"]

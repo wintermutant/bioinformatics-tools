@@ -25,8 +25,7 @@ async def health_check():
 
 @router.post("/example", response_model=GenericResponse)
 async def gc_content(request: GenericRequest):
-    return 0
-    
+    return 0    
 
 
 def generic_fileclass_api(file_path: str | Path, class_: type):
