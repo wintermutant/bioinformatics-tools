@@ -1,0 +1,24 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: biotools-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  fastapi:
+    build: .
+    container_name: biotools-fastapi
+    environment:
+      MONGO_URI: mongodb://admin:password123@mongodb:27017/
+    ports:
+      - "8000:80"
+    depends_on:
+      - mongodb
+
+volumes:
+  mongodb_data:
