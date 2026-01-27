@@ -8,7 +8,7 @@ class ApptainerKey:
     '''apptainer information'''
     executable: Path | str
     sif_path: Path | str
-    commands: list[str]
+    commands: list[tuple]
 
 
 @dataclass
@@ -17,4 +17,4 @@ class WorkflowKey:  #TODO: Rename this
     cmd_identifier: str
     snakemake_file: str
     other: list[str]
-    sif_files: list[str] = field(default_factory=list)
+    sif_files: list[tuple] = field(default_factory=list)

@@ -12,7 +12,8 @@ from bioinformatics_tools.caragols.condo import CxNode
 from bioinformatics_tools.file_classes.base_classes import command
 from bioinformatics_tools.utilities import ssh_slurm
 from bioinformatics_tools.workflow_tools.bapptainer import (
-    get_verified_sif_file, run_apptainer_container)
+    CacheSifError, cache_sif_files, get_verified_sif_file,
+    run_apptainer_container)
 from bioinformatics_tools.workflow_tools.models import (ApptainerKey,
                                                         WorkflowKey)
 
@@ -33,12 +34,17 @@ workflow_keys: dict[str, WorkflowKey] = {
     cmd_identifier='example',
     snakemake_file='example.smk',
     other=[''],
-    sif_files=['prodigal.sif']
+    # sif_files=['prodigal.sif']
+    sif_files=[]
     ),
-    'other': WorkflowKey(
-    cmd_identifier='other',
-    snakemake_file='example2.smk',
-    other=['']
+    'margie': WorkflowKey(
+    cmd_identifier='margie',
+    snakemake_file='margie.smk',
+    other=[''],
+    sif_files=[
+        ('prodigal.sif', '2.6.3-v1.0'),
+        ('run_dbcan_light', '4.2.0'),
+        ('kofam_scan_light', 'latest')]
     ),
     'prodigal': WorkflowKey(
         cmd_identifier='prodigal',
@@ -64,7 +70,7 @@ class WorkflowBase(clix.App):
     def build_snakemake_command(self) -> list[str]:
         pass
     
-    def build_executable(self, key: WorkflowKey, output: str | list[str], config_dict: dict = None) -> list[str]:
+    def build_executable(self, key: WorkflowKey, config_dict: dict = None, mode='notdev') -> list[str]:
         '''Given a workflow data object, with access to config and command line args,
         build out a snakemake command'''
         smk_path = WORKFLOW_DIR / key.snakemake_file  #Change this location if we want to expand snakemake locations
@@ -72,15 +78,19 @@ class WorkflowBase(clix.App):
         core_command = [
             'snakemake',
             '-s', str(smk_path),
+            # '-np',
             '--cores=1',
             '--use-apptainer',
             '--sdm=apptainer',
-            '--jobs=10',
-            '--executor=slurm',
+            '--apptainer-args', '-B /home/ddeemer -B /depot/lindems/data/Databases/',
+            '--jobs=1',
             '--latency-wait=60'
         ]
+        if mode != 'dev':
+            core_command.append('--executor=slurm')
 
         # Add default SLURM resources (each key=value is a separate arg)
+        #TODO: Grab these values from config OR point to Snakemake Profile
         core_command.extend([
             '--default-resources',
             'slurm_account=lindems',
@@ -171,7 +181,7 @@ class WorkflowBase(clix.App):
         get_verified_sif_file(selected_wf.sif_files)
 
         # ----------------------- Step 4 - build the executable ---------------------- #
-        wf_command = self.build_executable(selected_wf, final_target, config_dict=smk_config)
+        wf_command = self.build_executable(selected_wf, config_dict=smk_config)
         # wf_command = self.build_snakemake_command(selected_wf, default_output)
         LOGGER.info('Running snakemake command: %s', wf_command)
         str_smk = ' '.join(wf_command)
@@ -237,14 +247,77 @@ class WorkflowBase(clix.App):
         self.succeeded(msg='Successfully ran prodigal!')
     
     @command
-    def do_other(self):
-        '''second workflow to execute'''
-        default_output = 'delete.me'
+    def do_margie(self, ssh=False, mode='dev'):
+        '''example workflow to execute
+        This shouldn not need to worry about SSH at all'''
+        #TODO: Return a report object? Or just 0 vs. 1, or None?
 
-        if not (selected_wf := workflow_keys.get('other')):
-            self.failed('Parsed command line to "do_other", but did not match selected_wf')
-            return
-            
-        wf_command = self.build_snakemake_command(selected_wf, default_output)
-        self._run_workflow(wf_command)
-        self.succeeded(msg='Did the other workflow!')
+        LOGGER.info('Config:\n%s', self.conf.show())
+
+        # ----------------------- Step 0 - Get the WorkflowKey ----------------------- #
+        if not (selected_wf := workflow_keys.get('margie')):
+            return 1
+
+        # -------------- Step 1 - Get the input file (eventually files) -------------- #
+        input_file = self.conf.get('input')
+        if not input_file:
+            LOGGER.error('No input file specified. Use: dane_wf example input: <file>')
+            self.failed('No input file specified')
+            return 1
+
+        # ------- Step 2 - Get the appropriate output file from the input file ------- #
+        # Derive output filename from input (e.g., file.fasta -> file-output.txt)
+        # Basically we need a way to trace input to final output
+        input_path = Path(input_file)
+        out_prodigal = f"{input_path.stem}-prodigal.tkn"
+        out_dbcan = f"{input_path.stem}-dbcan.tkn"
+        out_kofam = f"{input_path.stem}-kofam.tkn"
+        LOGGER.info('Input file: %s', input_file)
+        LOGGER.info('out_prodigal file: %s', out_prodigal)
+        LOGGER.info('out_dbcan file: %s', out_dbcan)
+
+        # Log which snakemake executable will be used
+        try:
+            which_result = subprocess.run(['which', 'snakemake'], capture_output=True, text=True, check=True)
+            LOGGER.info('Using snakemake from: %s', which_result.stdout.strip())
+        except subprocess.CalledProcessError:
+            LOGGER.warning('Could not find snakemake executable in PATH')
+
+        # --- Step 3 - get program-specific params and send to snakemake as config --- #
+        prodigal_config = self.conf.get('prodigal')
+        threads = prodigal_config.get('threads')
+        #TODO: Is there a way to automatically get all config from prodigal
+        # or do we want to control this here?
+        smk_config = {
+            'input_fasta': input_file,
+            'out_prodigal': out_prodigal,
+            'out_dbcan': out_dbcan,
+            'out_kofam': out_kofam,
+            'prodigal_threads': threads
+        }
+
+        # -------- TODO: Step 3.5 - Download / ensure .sif file is downloaded -------- #
+        # ~/.cache/bioinformatics-tools/prodigal.sif --> multiple for some snakemake pipelines
+        try:
+            cache_sif_files(selected_wf.sif_files)
+        except CacheSifError as e:
+            LOGGER.critical('Error with cache_sif_files: %s', e)
+            self.failed(f'Error with cache_sif_files: {e}')
+
+        # ----------------------- Step 4 - build the executable ---------------------- #
+        wf_command = self.build_executable(selected_wf, config_dict=smk_config, mode=mode)
+        # wf_command = self.build_snakemake_command(selected_wf, default_output)
+        LOGGER.info('Running snakemake command: %s', wf_command)
+        str_smk = ' '.join(wf_command)
+        LOGGER.info('String snakemake: %s', str_smk)
+        print(f'\n=== SNAKEMAKE COMMAND ===\n{str_smk}\n========================\n')
+
+        # ------ Step 5 Execute the actual workflow (happens within our UV env) ------ #
+        if not ssh:  #TODO SSH compatibility
+            self._run_workflow(wf_command)
+            self.succeeded(msg="All good in the neighborhood (AppleBees TM)")
+        # else:
+            # self._run_workflow_ssh(str_smk)
+            # self.succeeded(msg="Ran on remote cluster all good.")
+
+        #TODO: Option to run via subprocess locally vs. SSH login node vs. SSH+Slurm
