@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ApptainerKey:
-    '''apptainer information'''
+    '''connecting programs to their respective container needed'''
     executable: Path | str
     sif_path: Path | str
     commands: list[tuple]

@@ -34,8 +34,9 @@ workflow_keys: dict[str, WorkflowKey] = {
     cmd_identifier='example',
     snakemake_file='example.smk',
     other=[''],
-    # sif_files=['prodigal.sif']
-    sif_files=[]
+    sif_files=[
+        ('prodigal.sif', '2.6.3-v1.0'),
+        ]
     ),
     'margie': WorkflowKey(
     cmd_identifier='margie',
@@ -44,13 +45,9 @@ workflow_keys: dict[str, WorkflowKey] = {
     sif_files=[
         ('prodigal.sif', '2.6.3-v1.0'),
         ('run_dbcan_light', '4.2.0'),
-        ('kofam_scan_light', 'latest')]
+        ('kofam_scan_light', 'latest'),
+        ('pfam_scan_light', 'latest')]
     ),
-    'prodigal': WorkflowKey(
-        cmd_identifier='prodigal',
-        snakemake_file='prodigal.sif',
-        other=[]
-    )
 }
 
 
@@ -79,11 +76,13 @@ class WorkflowBase(clix.App):
             'snakemake',
             '-s', str(smk_path),
             # '-np',
-            '--cores=1',
+            '--cores=all',
             '--use-apptainer',
             '--sdm=apptainer',
             '--apptainer-args', '-B /home/ddeemer -B /depot/lindems/data/Databases/',
-            '--jobs=1',
+            '--executor=slurm',
+            # '--workflow-profile=/home/ddeemer/.config/bioinformatics-tools/default-smk.yaml'
+            '--jobs=5',
             '--latency-wait=60'
         ]
         if mode != 'dev':
@@ -123,8 +122,8 @@ class WorkflowBase(clix.App):
         '''connect to ssh and execute the workflow instead of locally
         this would be using paramiko's ssh client instead of subprocess.run
         '''
-        job_id = ssh_slurm.submit_ssh_job(cmd)
-        return job_id
+        result = ssh_slurm.submit_ssh_job(cmd)
+        return result
 
     
     @command
@@ -272,6 +271,7 @@ class WorkflowBase(clix.App):
         out_prodigal = f"{input_path.stem}-prodigal.tkn"
         out_dbcan = f"{input_path.stem}-dbcan.tkn"
         out_kofam = f"{input_path.stem}-kofam.tkn"
+        out_pfam = f"{input_path.stem}-pfam.tkn"
         LOGGER.info('Input file: %s', input_file)
         LOGGER.info('out_prodigal file: %s', out_prodigal)
         LOGGER.info('out_dbcan file: %s', out_dbcan)
@@ -293,6 +293,7 @@ class WorkflowBase(clix.App):
             'out_prodigal': out_prodigal,
             'out_dbcan': out_dbcan,
             'out_kofam': out_kofam,
+            'out_pfam': out_pfam,
             'prodigal_threads': threads
         }
 

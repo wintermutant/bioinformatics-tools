@@ -4,8 +4,12 @@ This allows the CLI to be ported and ran through SSH to interface with HPCs,
 centering around running login node and SLURM commands. Since we use Snakemake,
 which controls SLURM batching and queueing, we can mainly run on login node.
 '''
+from datetime import datetime
+import logging
+
 import paramiko
 
+LOGGER = logging.getLogger(__name__)
 
 def get_genomes(location):
     ssh = paramiko.SSHClient()
@@ -27,28 +31,29 @@ def get_genomes(location):
     return files
 
 
-def submit_ssh_job(cmd) -> dict:
-    '''#TODO Could have it return an SSHExecOutput model or something like that'''
+def submit_ssh_job(cmd):
+    '''Generator that streams remote output line-by-line via SSH.
+    Yields each line as it arrives from the remote process.
+    '''
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
-    print('Connected!')
+    LOGGER.info('Connected!')
 
-    wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && {cmd}'  #TODO: I really don't like this, but points to uv/uvx
-    stdin, stdout, stderr = ssh.exec_command(wrapped_cmd)
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
+    work_dir = f'/depot/lindems/data/margie/tests/{timestamp}'
+    LOGGER.info('Running in working directory: %s', work_dir)
+    wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && mkdir -p {work_dir} && cd {work_dir} && {cmd} 2>&1'  #TODO: I really don't like this, but points to uv/uvx
 
-    stdout_txt = stdout.read().decode().strip()
-    try:
-        stdin_txt = stdin.read().decode().strip()
-    except OSError:
-        stdin_txt = 'None'
-    try:
-        stderr_txt = stderr.read().decode().strip()
-    except OSError:
-        stderr_txt = 'None'
-    print(f'Inside of submit_slurm_job:\nstdin: {stdin_txt}\nstdout: {stdout_txt},\nstderr: {stderr_txt}\n')
+    # ---------------------- Meat and potatoes of execution ---------------------- #
+    stdin, stdout, stderr = ssh.exec_command(wrapped_cmd, get_pty=True)
+
+    for line in iter(stdout.readline, ''):
+        LOGGER.info('[remote] %s', line.rstrip())
+        yield line.rstrip()
+
+    LOGGER.info('Remote execution completed.')
     ssh.close()
-    return {'stdin': stdin_txt, 'stdout': stdout_txt, 'stderr': stderr_txt}
 
 
 def submit_slurm_job(script_content, nodes=1, cpus=4, mem='4G', time='00:30:00'):
