@@ -13,18 +13,35 @@ rule all:
         "results/done.txt"
 
 
-rule run_prodigal_container:
+rule run_prodigal:
     """Run prodigal with snakemake containerization"""
     input:
-        config.get('input_fasta', 'poopballs.fasta')
+        config.get('input_fasta', '/tmp/example.fasta')
     output:
-        config.get('output_fasta', 'poopydiapy.out')
+        config.get('output_fasta', '/tmp/example.fasta')
     threads: config.get('prodigal_threads', 1)
     container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
         """
-        prodigal -h & touch {output}
+        prodigal -i {input} -o {output}
         """
+
+rule run_prodigal:
+    """Run prodigal with snakemake containerization"""
+    input:
+        config.get('input_fasta', '/tmp/example.fasta')
+    output:
+        config.get('output_fasta', '/tmp/example.fasta')
+    threads: config.get('prodigal_threads', 1)
+    resources:
+        mem_mb=100
+        mem_mb=lambda wc, input: max(2.5 * input.size_mb, 300)
+    container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
+    shell:
+        """
+        prodigal -i {input} -o {output}
+        """
+
 
 rule finalize:
     """Create done file from prodigal output"""

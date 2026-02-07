@@ -6,7 +6,8 @@ rule all:
     input:
         config.get('out_prodigal'),
         config.get('out_dbcan'),
-        config.get('out_kofam')
+        config.get('out_kofam'),
+        config.get('out_pfam'),
 
 
 rule run_prodigal:
@@ -17,13 +18,12 @@ rule run_prodigal:
         config.get('out_prodigal', '/scratch/negishi/ddeemer/margie/annotations/prodigal.tkn')
     threads: config.get('prodigal_threads', 1)
     resources:
-        mem_mb=100
+        mem_mb=2048
         # mem_mb=lambda wc, input: max(2.5 * input.size_mb, 300)
     container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
         """
         prodigal -i {input} -o {output}
-        touch {output}
         """
 
 
@@ -32,78 +32,125 @@ rule run_dbcan:
         config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
     output:
         config.get('out_dbcan', '/depot/lindems/data/Database/example-output/small-dbcan.out')
-    threads: 16
+    threads: 4
+    resources:
+        mem_mb=7984
     params:
-        db="/depot/lindems/data/Databases/cazyme-2026/db"
+        db="/depot/lindems/data/Databases/cazyme/db"
     container: "~/.cache/bioinformatics-tools/run_dbcan_light.sif"
     shell:
         """
         run_dbcan easy_CGC -v --mode prok --output_dir $(dirname {output}) --input_raw_data {input} --threads {threads} \
-        --prokaryotic --db_dir {params.db}
-        touch {output}
+        --prokaryotic --db_dir {params.db} && touch {output}
         """
 
 
 rule run_kofam:
     input:
-        config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
+        config.get('input_fasta', './smallish.fasta')
     output:
-        config.get('out_kofam', '/depot/lindems/data/Database/example-output/small-kofam.out')
+        config.get('out_kofam', './smallish-kofam.out')
     container: "~/.cache/bioinformatics-tools/kofam_scan_light.sif"
-    threads: 4
+    threads: 8
     params:
-        profile_db="/depot/lindems/data/Databases/KOFams/profiles",
-        ko_list="/depot/lindems/data/Databases/KOFams/ko_list"
+        profile_db="/depot/lindems/data/Databases/kofams/profiles",
+        ko_list="/depot/lindems/data/Databases/kofams/ko_list"
     shell:
         """
         exec_annotation {input} -o {output} --profile {params.profile_db} --ko-list {params.ko_list} \
         --cpu {threads}
-        touch {output}
         """
 
 
 rule run_pfam:
     input:
-        config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
+        config.get('input_fasta', './smallish.fasta')
     output:
-        config.get('out_pfam', '/depot/lindems/data/Database/example-output/small-pfam.out')
+        config.get('out_pfam', './smallish-pfam.out')
     container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
     threads: 4
     params:
-        db="/depot/lindems/data/Databases/Pfam"
+        db="/depot/lindems/data/Databases/pfam"
     shell:
         """
         pfam_scan.py {input} {params.db} -out {output} -cpu {threads}
         """
 
 
-
 rule run_cog:
+    '''requires a protein input file'''
+    input:
+        "{sample}.faa"
+    params:
+        outdir="/path/to/output/"
+        db="/depot/lindems/data/Databases/cog/"
+    output:
+        "{sample}.out"
+    container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
+    shell:
+        """
+        COGclassifier --infile {input} --outdir {params.outdir} --download_dir {params.db}
+        """
+
+
+rule run_merops:
     input:
         "{sample}.fasta"
     output:
         "{sample}.out"
-    # container: "~/.cache/"
+    params:
+        db="/depot/lindems/data/Databases/merops/merops.dmnd"
+    container: "~/.cache/bioinformatics-tools/diamond.sif"
     shell:
         """
-        touch {output}
-        """
-
-
-rule run_meropes:
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
+        diamond blastx -d {db} -q {input.fasta} -o {output}
         """
 
 
 rule run_tigr:
     input:
+        "{sample}.faa"
+    output:
+        one="Annotations/TigrFamResults/{sample}.hmmer.TIGR.hmm",
+        two="Annotations/TigrFamResults/{sample}.hmmer.TIGR.tbl"
+    params:
+        db="/depot/lindems/data/Databases/tigrfams/hmm_PGAP.LIB"
+    container: "~/.cache/bioinformatics-tools/hmmer.sif"
+    threads: 4
+    shell:
+        """
+        hmmscan -o {output.one} --tblout {output.two} --cpu {threads} {params.db} {input}
+        """
+
+
+rule run_uniport:
+    input:
+        "{sample}.fasta"
+    output:
+        "{sample}.out"
+    params:
+        db="/depot/lindems/data/Databases/uniref/uniref90"
+    # container: "~/.cache/"
+    shell:
+        """
+        touch {output}
+        """
+
+rule term_predict:
+    '''TBD - Not sure'''
+    input:
+        "{sample}.fasta"
+    output:
+        "{sample}.out"
+    # container: "~/.cache/"
+    shell:
+        """
+        touch {output}
+        """
+
+rule run_rast:
+    '''TBD - Not sure'''
+    input:
         "{sample}.fasta"
     output:
         "{sample}.out"
@@ -114,7 +161,23 @@ rule run_tigr:
         """
 
 
-rule run_uniport:
+rule run_tcdb:
+    '''TBD - Not sure'''
+    input:
+        "{sample}.fasta"
+    output:
+        "{sample}.out"
+    # container: "~/.cache/"
+    shell:
+        """
+        touch {output}
+        """
+
+
+rule run_promotech:
+    '''Promoter prediction in bacterial genomes
+    https://github.com/BioinformaticsLabAtMUN/Promotech
+    '''
     input:
         "{sample}.fasta"
     output:
