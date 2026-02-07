@@ -5,19 +5,20 @@ import asyncio
 import json
 import logging
 import os
+import datetime
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pymongo import MongoClient
 
-from bioinformatics_tools.api.models import GenericRequest, GenericResponse
 from bioinformatics_tools.utilities import ssh_slurm
 
 LOGGER = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1/example", tags=["example"])
-
+router = APIRouter(prefix="/v1/ssh", tags=["ssh"])
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password123@localhost:27017/")
 client = MongoClient(MONGO_URI)
@@ -59,6 +60,10 @@ async def create_dane_entry(entry: DaneEntry):
 class SlurmSend(BaseModel):
     script: str
 
+
+class GenomeSend(BaseModel):
+    genome_path: str
+
 @router.post("/run_slurm")
 async def run_slurm(content: SlurmSend):
     """Submit a SLURM job and return the job ID immediately"""
@@ -70,9 +75,61 @@ async def run_slurm(content: SlurmSend):
 @router.post("/run_ssh")
 async def run_shh(content: SlurmSend):
     """Submit a SLURM job and return the job ID immediately"""
+    LOGGER.info('Running run_shh')
     std_txt = ssh_slurm.submit_ssh_job(cmd=content.script)
-    print(f'Inside of run_shh. std_txt:\n{std_txt}')
+    LOGGER.info('Inside of run_shh. std_txt: %s', std_txt)
     return {"success": True, "std_txt": std_txt, "message": "Job submitted successfully"}
+
+# Job storage and executor
+jobs = {}
+executor = ThreadPoolExecutor(max_workers=4)
+
+def run_margie_task(job_id: str, genome_path: str):
+    '''Runs in a thread pool worker'''
+    jobs[job_id]["status"] = "running"
+    jobs[job_id]["phase"] = "Submitting to (Negishi (SSH)"
+    jobs[job_id]["logs"] = ""
+    try:
+        command = f"uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf margie input: {genome_path}"
+        # submit_ssh_job is a generator - consume it and collect output
+        for line in ssh_slurm.submit_ssh_job(cmd=command):
+            jobs[job_id]["logs"] += line + "\n"
+            # Update phase based on output if needed
+            if "snakemake" in line.lower():
+                jobs[job_id]["phase"] = "Running Snakemake"
+
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["phase"] = "Done"
+    except Exception as e:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["logs"] += f"\nError: {str(e)}"
+
+
+@router.post("/run_margie")
+async def run_margie(genome_data: GenomeSend):
+    """Takes in a genome path (on Negishi) and runs the margie pipeline"""
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "job_id": job_id,
+        "status": "pending",
+        "phase": "Initializing",
+        "genome_path": genome_data.genome_path,
+        "sub_jobs": [],
+        "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+
+    # Submit to thread pool - returns immediately
+    executor.submit(run_margie_task, job_id, genome_data.genome_path)
+
+    return {"success": True, "job_id": job_id, "message": "Job submitted successfully"}
+
+
+@router.get("/job_status/{job_id}")
+async def get_job_status(job_id: str):
+    """Get status of a running job"""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return jobs[job_id]
 
 
 async def job_status_generator(job_id: str):

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from bioinformatics_tools.api.routers import fasta, ssh_upload, example
+from bioinformatics_tools.api.routers import fasta, health, ssh
 
 # Configure logging
 logging.basicConfig(
@@ -40,8 +40,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(fasta.router)
-app.include_router(ssh_upload.router)
-app.include_router(example.router)
+app.include_router(health.router)
+app.include_router(ssh.router)
 
 # Root endpoint
 @app.get("/")
@@ -51,7 +51,7 @@ async def root():
         "status": "success",
         "message": "Bioinformatics Tools API",
         "version": "0.0.1",
-        "docs": "/docs",
+        "docs": "/tbd",
         "endpoints": {
             "fasta": "/v1/fasta",
             "ssh_upload": "/v1/ssh"
