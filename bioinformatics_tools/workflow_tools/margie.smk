@@ -31,7 +31,7 @@ rule run_dbcan:
     input:
         config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
     output:
-        config.get('out_dbcan', '/depot/lindems/data/Database/example-output/small-dbcan.out')
+        tkn = config.get('out_dbcan', '/depot/lindems/data/Database/example-output/small-dbcan.out')
     threads: 4
     resources:
         mem_mb=7984
@@ -40,7 +40,7 @@ rule run_dbcan:
     container: "~/.cache/bioinformatics-tools/run_dbcan_light.sif"
     shell:
         """
-        run_dbcan easy_CGC -v --mode prok --output_dir $(dirname {output}) --input_raw_data {input} --threads {threads} \
+        run_dbcan easy_CGC -v --mode prok --output_dir . --input_raw_data {input} --threads {threads} \
         --prokaryotic --db_dir {params.db} && touch {output}
         """
 
@@ -82,7 +82,7 @@ rule run_cog:
     input:
         "{sample}.faa"
     params:
-        outdir="/path/to/output/"
+        outdir="/path/to/output/",
         db="/depot/lindems/data/Databases/cog/"
     output:
         "{sample}.out"
