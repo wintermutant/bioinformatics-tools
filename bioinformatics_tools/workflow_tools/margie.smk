@@ -1,13 +1,16 @@
 """
 All MARGIE rules. No games.
 """
+import os
+
+WORKFLOW_DIR = os.path.dirname(workflow.snakefile)
 
 rule all:
     input:
-        config.get('out_prodigal'),
-        config.get('out_dbcan'),
-        config.get('out_kofam'),
-        config.get('out_pfam'),
+        config.get('out_prodigal_db', 'prodigal_db.tkn'),
+        # config.get('out_dbcan'),
+        # config.get('out_kofam'),
+        # config.get('out_pfam'),
 
 
 rule run_prodigal:
@@ -23,7 +26,22 @@ rule run_prodigal:
     container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
         """
-        prodigal -i {input} -o {output}
+        prodigal -i {input} -f gff -o {output}
+        """
+
+
+rule load_prodigal_to_db:
+    """Load prodigal GFF output into SQLite database"""
+    input:
+        gff=config.get('out_prodigal', '/scratch/negishi/ddeemer/margie/annotations/prodigal.tkn')
+    output:
+        tkn=config.get('out_prodigal_db', 'prodigal_db.tkn')
+    params:
+        db=config.get('annotations_db', 'annotations.db'),
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} {input.gff} {params.db} prodigal --token {output.tkn}
         """
 
 
@@ -58,7 +76,7 @@ rule run_kofam:
     shell:
         """
         exec_annotation {input} -o {output} --profile {params.profile_db} --ko-list {params.ko_list} \
-        --cpu {threads}
+        --cpu {threads} --format detail-tsv
         """
 
 
