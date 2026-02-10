@@ -10,7 +10,9 @@ rule all:
         config.get('out_prodigal_db', 'prodigal_db.tkn'),
         # config.get('out_dbcan'),
         # config.get('out_kofam'),
-        # config.get('out_pfam'),
+        # config.get('out_pfam')
+        config.get('out_pfam_db', 'pfam_db.tkn'),
+
 
 
 rule run_prodigal:
@@ -18,7 +20,8 @@ rule run_prodigal:
     input:
         config.get('input_fasta', '/scratch/negishi/ddeemer/margie/genomes')
     output:
-        config.get('out_prodigal', '/scratch/negishi/ddeemer/margie/annotations/prodigal.tkn')
+        gff=config.get('out_prodigal', '/scratch/negishi/ddeemer/margie/annotations/prodigal.tkn'),
+        faa=config.get('out_prodigal_faa', '/scratch/negishi/ddeemer/margie/annotations/prodigal.faa')
     threads: config.get('prodigal_threads', 1)
     resources:
         mem_mb=2048
@@ -26,7 +29,7 @@ rule run_prodigal:
     container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
         """
-        prodigal -i {input} -f gff -o {output}
+        prodigal -i {input} -f gff -o {output.gff} -a {output.faa}
         """
 
 
@@ -41,7 +44,7 @@ rule load_prodigal_to_db:
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
-        python {params.script} {input.gff} {params.db} prodigal --token {output.tkn}
+        python {params.script} gff {input.gff} {params.db} prodigal --token {output.tkn}
         """
 
 
@@ -82,7 +85,7 @@ rule run_kofam:
 
 rule run_pfam:
     input:
-        config.get('input_fasta', './smallish.fasta')
+        config.get('out_prodigal_faa', '/scratch/negishi/ddeemer/margie/annotations/prodigal.faa')
     output:
         config.get('out_pfam', './smallish-pfam.out')
     container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
@@ -92,6 +95,21 @@ rule run_pfam:
     shell:
         """
         pfam_scan.py {input} {params.db} -out {output} -cpu {threads}
+        """
+
+
+rule load_pfam_to_db:
+    """Load pfam CSV output into SQLite database"""
+    input:
+        csv=config.get('out_pfam', './smallish-pfam.out')
+    output:
+        tkn=config.get('out_pfam_db', 'pfam_db.tkn')
+    params:
+        db=config.get('annotations_db', 'annotations.db'),
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} csv {input.csv} {params.db} pfam --token {output.tkn}
         """
 
 

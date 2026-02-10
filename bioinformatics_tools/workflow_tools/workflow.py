@@ -268,7 +268,8 @@ class WorkflowBase(clix.App):
         # Derive output filename from input (e.g., file.fasta -> file-output.txt)
         # Basically we need a way to trace input to final output
         input_path = Path(input_file)
-        out_prodigal = f"{input_path.stem}-prodigal.tkn"
+        out_prodigal = f"{input_path.stem}-prodigal.tkn",
+        out_prodigal_faa = f"{input_path.stem}-prodigal.faa"
         out_dbcan = f"{input_path.stem}-dbcan.tkn"
         out_kofam = f"{input_path.stem}-kofam.tkn"
         out_pfam = f"{input_path.stem}-pfam.tkn"
@@ -291,6 +292,7 @@ class WorkflowBase(clix.App):
         smk_config = {
             'input_fasta': input_file,
             'out_prodigal': out_prodigal,
+            'out_prodigal_faa': out_prodigal_faa,
             'out_dbcan': out_dbcan,
             'out_kofam': out_kofam,
             'out_pfam': out_pfam,

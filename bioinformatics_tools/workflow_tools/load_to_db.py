@@ -2,22 +2,26 @@
 Load annotation tool output into a SQLite database.
 
 Usage:
-    python load_to_db.py <input_gff> <db_path> <source_tool> [--token <token_file>]
+    python load_to_db.py gff  <input> <db_path> <source_tool> [--token <token_file>]
+    python load_to_db.py csv  <input> <db_path> <table_name>  [--token <token_file>]
 
-Designed to be called from Snakemake rules after each annotation tool runs.
-Parses GFF3 output (prodigal, etc.) and inserts rows into an existing SQLite DB.
+Subcommands:
+    gff  - Load GFF3 output (prodigal, etc.) into the `annotations` table
+    csv  - Load any CSV with headers into a table named after the tool.
+           Columns and types are inferred from the headers and data.
 
-The `annotations` table is created if it doesn't already exist, so you can
-point multiple tools at the same DB and they'll all land in one table
-differentiated by the `source` column.
+Both subcommands write to the same .db file so all results live together.
 """
 import argparse
+import csv
 import sqlite3
 import sys
 from pathlib import Path
 
 
-CREATE_TABLE_SQL = """
+# ──────────────────────────── GFF loader ──────────────────────────── #
+
+CREATE_GFF_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS annotations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     seqid TEXT NOT NULL,
@@ -29,7 +33,6 @@ CREATE TABLE IF NOT EXISTS annotations (
     strand TEXT,
     phase TEXT,
     attributes TEXT,
-    -- parsed from prodigal GFF attributes --
     gene_id TEXT,
     partial TEXT,
     start_type TEXT,
@@ -39,7 +42,7 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 """
 
-INSERT_SQL = """
+INSERT_GFF_SQL = """
 INSERT INTO annotations
     (seqid, source, type, start, end, score, strand, phase, attributes,
      gene_id, partial, start_type, rbs_motif, gc_content, confidence)
@@ -67,10 +70,7 @@ def safe_float(value: str | None) -> float | None:
 
 
 def load_gff_to_db(gff_path: str, db_path: str, source_tool: str) -> int:
-    """Parse a GFF3 file and insert rows into the annotations table.
-
-    Returns the number of rows inserted.
-    """
+    """Parse a GFF3 file and insert rows into the annotations table."""
     rows = []
     with open(gff_path) as fh:
         for line in fh:
@@ -86,14 +86,14 @@ def load_gff_to_db(gff_path: str, db_path: str, source_tool: str) -> int:
 
             rows.append((
                 seqid,
-                source_tool,       # use the explicit tool name, not the GFF source col
+                source_tool,
                 type_,
                 int(start),
                 int(end),
                 safe_float(score),
                 strand,
                 phase,
-                attributes,        # keep raw attributes for reference
+                attributes,
                 attrs.get("ID"),
                 attrs.get("partial"),
                 attrs.get("start_type"),
@@ -104,8 +104,8 @@ def load_gff_to_db(gff_path: str, db_path: str, source_tool: str) -> int:
 
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute(CREATE_TABLE_SQL)
-        conn.executemany(INSERT_SQL, rows)
+        conn.execute(CREATE_GFF_TABLE_SQL)
+        conn.executemany(INSERT_GFF_SQL, rows)
         conn.commit()
     finally:
         conn.close()
@@ -113,24 +113,120 @@ def load_gff_to_db(gff_path: str, db_path: str, source_tool: str) -> int:
     return len(rows)
 
 
+# ──────────────────────────── CSV loader ──────────────────────────── #
+
+def _infer_type(value: str) -> str:
+    """Guess SQLite column type from a sample value."""
+    try:
+        int(value)
+        return "INTEGER"
+    except ValueError:
+        pass
+    try:
+        float(value)
+        return "REAL"
+    except ValueError:
+        pass
+    return "TEXT"
+
+
+def load_csv_to_db(csv_path: str, db_path: str, table_name: str) -> int:
+    """Load a CSV file with headers into a table named `table_name`.
+
+    - Creates the table from CSV headers if it doesn't exist.
+    - Infers column types (INTEGER/REAL/TEXT) from the first data row.
+    - Adds an autoincrement `id` primary key.
+    """
+    with open(csv_path, newline="") as fh:
+        reader = csv.reader(fh)
+        headers = [h.strip() for h in next(reader)]
+        data_rows = list(reader)
+
+    if not data_rows:
+        return 0
+
+    # Infer types from the first row
+    col_types = [_infer_type(val) for val in data_rows[0]]
+
+    col_defs = ",\n    ".join(
+        f"{h} {t}" for h, t in zip(headers, col_types)
+    )
+    create_sql = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        {col_defs}
+    );
+    """
+
+    placeholders = ", ".join("?" for _ in headers)
+    insert_sql = f"INSERT INTO {table_name} ({', '.join(headers)}) VALUES ({placeholders});"
+
+    # Cast values to match inferred types
+    def cast_row(row):
+        result = []
+        for val, typ in zip(row, col_types):
+            val = val.strip()
+            if not val:
+                result.append(None)
+            elif typ == "INTEGER":
+                result.append(int(val))
+            elif typ == "REAL":
+                result.append(float(val))
+            else:
+                result.append(val)
+        return tuple(result)
+
+    rows = [cast_row(r) for r in data_rows]
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(create_sql)
+        conn.executemany(insert_sql, rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+    return len(rows)
+
+
+# ──────────────────────────── CLI ──────────────────────────── #
+
 def main():
-    parser = argparse.ArgumentParser(description="Load GFF annotation output into SQLite")
-    parser.add_argument("input_gff", help="Path to GFF3 file from annotation tool")
-    parser.add_argument("db_path", help="Path to existing SQLite database")
-    parser.add_argument("source_tool", help="Name of the annotation tool (e.g. prodigal)")
-    parser.add_argument("--token", help="Path to write a token file on success")
+    parser = argparse.ArgumentParser(description="Load annotation output into SQLite")
+    sub = parser.add_subparsers(dest="format", required=True)
+
+    # gff subcommand
+    gff_p = sub.add_parser("gff", help="Load GFF3 file into the annotations table")
+    gff_p.add_argument("input_file", help="Path to GFF3 file")
+    gff_p.add_argument("db_path", help="Path to SQLite database")
+    gff_p.add_argument("source_tool", help="Tool name (e.g. prodigal)")
+    gff_p.add_argument("--token", help="Write a token file on success")
+
+    # csv subcommand
+    csv_p = sub.add_parser("csv", help="Load CSV file into a named table")
+    csv_p.add_argument("input_file", help="Path to CSV file with headers")
+    csv_p.add_argument("db_path", help="Path to SQLite database")
+    csv_p.add_argument("table_name", help="Table name (e.g. pfam)")
+    csv_p.add_argument("--token", help="Write a token file on success")
+
     args = parser.parse_args()
 
-    if not Path(args.input_gff).exists():
-        print(f"ERROR: Input file not found: {args.input_gff}", file=sys.stderr)
+    if not Path(args.input_file).exists():
+        print(f"ERROR: Input file not found: {args.input_file}", file=sys.stderr)
         sys.exit(1)
 
-    n = load_gff_to_db(args.input_gff, args.db_path, args.source_tool)
-    print(f"Loaded {n} annotations from {args.source_tool} into {args.db_path}")
+    if args.format == "gff":
+        n = load_gff_to_db(args.input_file, args.db_path, args.source_tool)
+        label = args.source_tool
+    else:
+        n = load_csv_to_db(args.input_file, args.db_path, args.table_name)
+        label = args.table_name
+
+    print(f"Loaded {n} rows from {label} into {args.db_path}")
 
     if args.token:
         Path(args.token).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.token).write_text(f"{n} rows loaded from {args.source_tool}\n")
+        Path(args.token).write_text(f"{n} rows loaded from {label}\n")
 
 
 if __name__ == "__main__":
