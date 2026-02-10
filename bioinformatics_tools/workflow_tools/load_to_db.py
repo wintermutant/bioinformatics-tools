@@ -4,19 +4,81 @@ Load annotation tool output into a SQLite database.
 Usage:
     python load_to_db.py gff  <input> <db_path> <source_tool> [--token <token_file>]
     python load_to_db.py csv  <input> <db_path> <table_name>  [--token <token_file>]
+    python load_to_db.py tsv  <input> <db_path> <table_name>  [--token <token_file>]
 
 Subcommands:
     gff  - Load GFF3 output (prodigal, etc.) into the `annotations` table
     csv  - Load any CSV with headers into a table named after the tool.
            Columns and types are inferred from the headers and data.
+    tsv  - Load any TSV with headers into a table named after the tool.
+           Same as csv but tab-delimited (e.g. COGclassifier output).
 
-Both subcommands write to the same .db file so all results live together.
+All subcommands write to the same .db file so all results live together.
 """
 import argparse
 import csv
+import hashlib
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+# ─────────────────────────── Provenance ─────────────────────────── #
+
+CREATE_RUN_LOG_SQL = """
+CREATE TABLE IF NOT EXISTS run_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    input_hash TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    input_path TEXT,
+    row_count INTEGER,
+    loaded_at TEXT NOT NULL,
+    UNIQUE(input_hash, tool)
+);
+"""
+
+
+def _compute_file_hash(file_path: str) -> str:
+    """Compute SHA-256 hash of a file's contents."""
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def _already_loaded(db_path: str, input_hash: str, tool: str) -> bool:
+    """Check if a file with this hash was already loaded for this tool."""
+    if not Path(db_path).exists():
+        return False
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(CREATE_RUN_LOG_SQL)
+        row = conn.execute(
+            "SELECT id FROM run_log WHERE input_hash = ? AND tool = ?",
+            (input_hash, tool),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def _record_load(db_path: str, input_hash: str, tool: str,
+                 input_path: str, row_count: int) -> None:
+    """Record a successful load in the run_log table."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(CREATE_RUN_LOG_SQL)
+        conn.execute(
+            "INSERT OR IGNORE INTO run_log (input_hash, tool, input_path, row_count, loaded_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (input_hash, tool, input_path, row_count,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ──────────────────────────── GFF loader ──────────────────────────── #
@@ -130,15 +192,16 @@ def _infer_type(value: str) -> str:
     return "TEXT"
 
 
-def load_csv_to_db(csv_path: str, db_path: str, table_name: str) -> int:
-    """Load a CSV file with headers into a table named `table_name`.
+def load_csv_to_db(csv_path: str, db_path: str, table_name: str,
+                   delimiter: str = ",") -> int:
+    """Load a delimited file with headers into a table named `table_name`.
 
-    - Creates the table from CSV headers if it doesn't exist.
+    - Creates the table from headers if it doesn't exist.
     - Infers column types (INTEGER/REAL/TEXT) from the first data row.
     - Adds an autoincrement `id` primary key.
     """
     with open(csv_path, newline="") as fh:
-        reader = csv.reader(fh)
+        reader = csv.reader(fh, delimiter=delimiter)
         headers = [h.strip() for h in next(reader)]
         data_rows = list(reader)
 
@@ -148,8 +211,9 @@ def load_csv_to_db(csv_path: str, db_path: str, table_name: str) -> int:
     # Infer types from the first row
     col_types = [_infer_type(val) for val in data_rows[0]]
 
+    quoted_headers = [f'"{h}"' for h in headers]
     col_defs = ",\n    ".join(
-        f"{h} {t}" for h, t in zip(headers, col_types)
+        f'"{h}" {t}' for h, t in zip(headers, col_types)
     )
     create_sql = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
@@ -159,7 +223,7 @@ def load_csv_to_db(csv_path: str, db_path: str, table_name: str) -> int:
     """
 
     placeholders = ", ".join("?" for _ in headers)
-    insert_sql = f"INSERT INTO {table_name} ({', '.join(headers)}) VALUES ({placeholders});"
+    insert_sql = f"INSERT INTO {table_name} ({', '.join(quoted_headers)}) VALUES ({placeholders});"
 
     # Cast values to match inferred types
     def cast_row(row):
@@ -209,6 +273,13 @@ def main():
     csv_p.add_argument("table_name", help="Table name (e.g. pfam)")
     csv_p.add_argument("--token", help="Write a token file on success")
 
+    # tsv subcommand
+    tsv_p = sub.add_parser("tsv", help="Load TSV file into a named table")
+    tsv_p.add_argument("input_file", help="Path to TSV file with headers")
+    tsv_p.add_argument("db_path", help="Path to SQLite database")
+    tsv_p.add_argument("table_name", help="Table name (e.g. cog)")
+    tsv_p.add_argument("--token", help="Write a token file on success")
+
     args = parser.parse_args()
 
     if not Path(args.input_file).exists():
@@ -216,12 +287,28 @@ def main():
         sys.exit(1)
 
     if args.format == "gff":
-        n = load_gff_to_db(args.input_file, args.db_path, args.source_tool)
         label = args.source_tool
     else:
-        n = load_csv_to_db(args.input_file, args.db_path, args.table_name)
         label = args.table_name
 
+    # Check provenance: skip if this exact input was already loaded
+    input_hash = _compute_file_hash(args.input_file)
+    if _already_loaded(args.db_path, input_hash, label):
+        print(f"Skipped {label}: input already loaded (hash {input_hash[:12]}...)")
+        if args.token:
+            Path(args.token).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.token).write_text(f"0 rows loaded from {label} (already in db)\n")
+        return
+
+    if args.format == "gff":
+        n = load_gff_to_db(args.input_file, args.db_path, args.source_tool)
+    elif args.format == "tsv":
+        n = load_csv_to_db(args.input_file, args.db_path, args.table_name,
+                           delimiter="\t")
+    else:
+        n = load_csv_to_db(args.input_file, args.db_path, args.table_name)
+
+    _record_load(args.db_path, input_hash, label, args.input_file, n)
     print(f"Loaded {n} rows from {label} into {args.db_path}")
 
     if args.token:
