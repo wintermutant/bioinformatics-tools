@@ -16,6 +16,7 @@ from bioinformatics_tools.workflow_tools.bapptainer import (
     run_apptainer_container)
 from bioinformatics_tools.workflow_tools.models import (ApptainerKey,
                                                         WorkflowKey)
+from bioinformatics_tools.workflow_tools.output_cache import restore_all, store_all
 
 LOGGER = logging.getLogger(__name__)
 WORKFLOW_DIR = Path(__file__).parent
@@ -46,7 +47,8 @@ workflow_keys: dict[str, WorkflowKey] = {
         ('prodigal.sif', '2.6.3-v1.0'),
         ('run_dbcan_light', '4.2.0'),
         ('kofam_scan_light', 'latest'),
-        ('pfam_scan_light', 'latest')]
+        ('pfam_scan_light', 'latest'),
+        ('cogclassifier', 'latest')]
     ),
 }
 
@@ -268,10 +270,16 @@ class WorkflowBase(clix.App):
         # Derive output filename from input (e.g., file.fasta -> file-output.txt)
         # Basically we need a way to trace input to final output
         input_path = Path(input_file)
-        out_prodigal = f"{input_path.stem}-prodigal.tkn"
-        out_dbcan = f"{input_path.stem}-dbcan.tkn"
-        out_kofam = f"{input_path.stem}-kofam.tkn"
-        out_pfam = f"{input_path.stem}-pfam.tkn"
+        out_prodigal = f"prodigal/{input_path.stem}-prodigal.tkn"
+        out_prodigal_faa = f"prodigal/{input_path.stem}-prodigal.faa"
+        out_prodigal_db = f"prodigal/{input_path.stem}-prodigal_db.tkn"
+        out_pfam = f"pfam/{input_path.stem}-pfam.tkn"
+        out_pfam_db = f"pfam/{input_path.stem}-pfam_db.tkn"
+        out_cog_classify = "cog/cog_classify.tsv"
+        out_cog_count = "cog/cog_count.tsv"
+        out_cog_db = f"cog/{input_path.stem}-cog_db.tkn"
+        out_dbcan = f"{input_path.stem}-dbcan.tkn"  # Not being used not
+        out_kofam = f"{input_path.stem}-kofam.tkn"  # Not being used not
         LOGGER.info('Input file: %s', input_file)
         LOGGER.info('out_prodigal file: %s', out_prodigal)
         LOGGER.info('out_dbcan file: %s', out_dbcan)
@@ -286,15 +294,23 @@ class WorkflowBase(clix.App):
         # --- Step 3 - get program-specific params and send to snakemake as config --- #
         prodigal_config = self.conf.get('prodigal')
         threads = prodigal_config.get('threads')
+        margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
         #TODO: Is there a way to automatically get all config from prodigal
         # or do we want to control this here?
         smk_config = {
             'input_fasta': input_file,
             'out_prodigal': out_prodigal,
+            'out_prodigal_faa': out_prodigal_faa,
+            'out_prodigal_db': out_prodigal_db,
+            'out_pfam': out_pfam,
+            'out_pfam_db': out_pfam_db,
+            'out_cog_classify': out_cog_classify,
+            'out_cog_count': out_cog_count,
+            'out_cog_db': out_cog_db,
             'out_dbcan': out_dbcan,
             'out_kofam': out_kofam,
-            'out_pfam': out_pfam,
-            'prodigal_threads': threads
+            'prodigal_threads': threads,
+            'margie_db': margie_db,
         }
 
         # -------- TODO: Step 3.5 - Download / ensure .sif file is downloaded -------- #
@@ -304,6 +320,15 @@ class WorkflowBase(clix.App):
         except CacheSifError as e:
             LOGGER.critical('Error with cache_sif_files: %s', e)
             self.failed(f'Error with cache_sif_files: {e}')
+
+        # ----------- Step 3.6 - Restore cached outputs from the DB ----------- #
+        cache_map = {
+            'prodigal': [out_prodigal, out_prodigal_faa],
+            'pfam': [out_pfam],
+            'cog': [out_cog_classify, out_cog_count],
+        }
+        restored = restore_all(margie_db, input_file, cache_map)
+        LOGGER.info('Cache restore results: %s', restored)
 
         # ----------------------- Step 4 - build the executable ---------------------- #
         wf_command = self.build_executable(selected_wf, config_dict=smk_config, mode=mode)
@@ -316,6 +341,10 @@ class WorkflowBase(clix.App):
         # ------ Step 5 Execute the actual workflow (happens within our UV env) ------ #
         if not ssh:  #TODO SSH compatibility
             self._run_workflow(wf_command)
+
+            # ---- Step 5.5 - Store new outputs into DB cache ---- #
+            store_all(margie_db, input_file, cache_map)
+
             self.succeeded(msg="All good in the neighborhood (AppleBees TM)")
         # else:
             # self._run_workflow_ssh(str_smk)

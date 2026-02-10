@@ -1,21 +1,29 @@
 """
 All MARGIE rules. No games.
 """
+import os
+
+WORKFLOW_DIR = os.path.dirname(workflow.snakefile)
 
 rule all:
     input:
-        config.get('out_prodigal'),
-        config.get('out_dbcan'),
-        config.get('out_kofam'),
-        config.get('out_pfam'),
+        config.get('out_prodigal_db', 'prodigal_db.tkn'),
+        # config.get('out_dbcan'),
+        # config.get('out_kofam'),
+        # config.get('out_pfam')
+        config.get('out_pfam_db', 'pfam_db.tkn'),
+        config.get('out_cog_db', 'cog_db.tkn'),
+
 
 
 rule run_prodigal:
     """prodigal"""
     input:
-        config.get('input_fasta', '/scratch/negishi/ddeemer/margie/genomes')
+        config.get('input_fasta', '/home/ddeemer/smallish.fasta')
     output:
-        config.get('out_prodigal', '/scratch/negishi/ddeemer/margie/annotations/prodigal.tkn')
+        gff=config.get('out_prodigal', 'prodigal/prodigal.tkn'),
+        faa=config.get('out_prodigal_faa', 'prodigal/prodigal.faa')
+    group: "prodigal"
     threads: config.get('prodigal_threads', 1)
     resources:
         mem_mb=2048
@@ -23,7 +31,96 @@ rule run_prodigal:
     container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
         """
-        prodigal -i {input} -o {output}
+        prodigal -i {input} -f gff -o {output.gff} -a {output.faa}
+        """
+
+
+rule load_prodigal_to_db:
+    """Load prodigal GFF output into SQLite database"""
+    input:
+        gff=config.get('out_prodigal', 'prodigal/prodigal.tkn')
+    output:
+        tkn=config.get('out_prodigal_db', 'prodigal/prodigal_db.tkn')
+    group: "prodigal"
+    params:
+        db=config.get('margie_db', '/depot/lindems/data/margie/margie.db'),
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} gff {input.gff} {params.db} prodigal --token {output.tkn}
+        """
+
+
+rule run_pfam:
+    input:
+        config.get('out_prodigal_faa', '/home/ddeemer/smallish.faa')
+    output:
+        config.get('out_pfam', 'pfam/pfam.tkn')
+    group: "pfam"
+    container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
+    threads: 4
+    params:
+        db=config.get("pfam_db", "/depot/lindems/data/Databases/pfam")
+    shell:
+        """
+        pfam_scan.py {input} {params.db} -out {output} -cpu {threads}
+        """
+
+
+rule load_pfam_to_db:
+    """Load pfam CSV output into SQLite database"""
+    input:
+        csv=config.get('out_pfam', 'pfam/pfam.tkn')
+    output:
+        tkn=config.get('out_pfam_db', 'pfam/pfam_db.tkn')
+    group: "pfam"
+    params:
+        db=config.get('margie_db', 'margie.db'),
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} csv {input.csv} {params.db} pfam --token {output.tkn}
+        """
+
+
+rule run_cog:
+    """COGclassifier - classify proteins into COG functional categories"""
+    input:
+        faa=config.get('out_prodigal_faa', '/home/ddeemer/smallish.faa')
+    output:
+        classify=config.get('out_cog_classify', 'cog/cog_classify.tsv'),
+        counts=config.get('out_cog_count', 'cog/cog_count.tsv'),
+        tkn=config.get('out_cog', 'cog/cog.tkn')
+    group: "cog"
+    params:
+        outdir=config.get('cog_outdir', 'cog'),
+        db=config.get('cog_db', '/depot/lindems/data/Databases/cog/')
+    threads: config.get('cog_threads', 4)
+    resources:
+        mem_mb=4096
+    container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
+    shell:
+        """
+        COGclassifier -i {input.faa} -o {params.outdir} -d {params.db} -t {threads} \
+        && touch {output.tkn}
+        """
+
+
+rule load_cog_to_db:
+    """Load COGclassifier TSV output into SQLite database"""
+    input:
+        classify=config.get('out_cog_classify', 'cog/cog_classify.tsv'),
+        counts=config.get('out_cog_count', 'cog/cog_count.tsv')
+    output:
+        tkn=config.get('out_cog_db', 'cog/cog_db.tkn')
+    group: "cog"
+    params:
+        db=config.get('margie_db', 'margie.db'),
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} tsv {input.classify} {params.db} cog_classify --token {output.tkn} \
+        && python {params.script} tsv {input.counts} {params.db} cog_count
         """
 
 
@@ -58,42 +155,12 @@ rule run_kofam:
     shell:
         """
         exec_annotation {input} -o {output} --profile {params.profile_db} --ko-list {params.ko_list} \
-        --cpu {threads}
-        """
-
-
-rule run_pfam:
-    input:
-        config.get('input_fasta', './smallish.fasta')
-    output:
-        config.get('out_pfam', './smallish-pfam.out')
-    container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
-    threads: 4
-    params:
-        db="/depot/lindems/data/Databases/pfam"
-    shell:
-        """
-        pfam_scan.py {input} {params.db} -out {output} -cpu {threads}
-        """
-
-
-rule run_cog:
-    '''requires a protein input file'''
-    input:
-        "{sample}.faa"
-    params:
-        outdir="/path/to/output/",
-        db="/depot/lindems/data/Databases/cog/"
-    output:
-        "{sample}.out"
-    container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
-    shell:
-        """
-        COGclassifier --infile {input} --outdir {params.outdir} --download_dir {params.db}
+        --cpu {threads} --format detail-tsv
         """
 
 
 rule run_merops:
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.fasta"
     output:
@@ -108,6 +175,7 @@ rule run_merops:
 
 
 rule run_tigr:
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.faa"
     output:
@@ -124,6 +192,7 @@ rule run_tigr:
 
 
 rule run_uniport:
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.fasta"
     output:
@@ -137,7 +206,7 @@ rule run_uniport:
         """
 
 rule term_predict:
-    '''TBD - Not sure'''
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.fasta"
     output:
@@ -149,7 +218,7 @@ rule term_predict:
         """
 
 rule run_rast:
-    '''TBD - Not sure'''
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.fasta"
     output:
@@ -162,7 +231,7 @@ rule run_rast:
 
 
 rule run_tcdb:
-    '''TBD - Not sure'''
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.fasta"
     output:
@@ -175,7 +244,9 @@ rule run_tcdb:
 
 
 rule run_promotech:
-    '''Promoter prediction in bacterial genomes
+    '''
+    TODO: INCOMPLETE
+    Promoter prediction in bacterial genomes
     https://github.com/BioinformaticsLabAtMUN/Promotech
     '''
     input:
@@ -190,6 +261,7 @@ rule run_promotech:
 
 
 rule run_template:
+    '''TODO: INCOMPLETE'''
     input:
         "{sample}.fasta"
     output:
