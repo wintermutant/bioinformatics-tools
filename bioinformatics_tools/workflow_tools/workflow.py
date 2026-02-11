@@ -324,8 +324,11 @@ class WorkflowBase(clix.App):
         # ----------- Step 3.6 - Restore cached outputs from the DB ----------- #
         cache_map = {
             'prodigal': [out_prodigal, out_prodigal_faa],
+            'prodigal_db': [out_prodigal_db],
             'pfam': [out_pfam],
+            'pfam_db': [out_pfam_db],
             'cog': [out_cog_classify, out_cog_count],
+            'cog_db': [out_cog_db],
         }
         restored = restore_all(margie_db, input_file, cache_map)
         LOGGER.info('Cache restore results: %s', restored)

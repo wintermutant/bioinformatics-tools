@@ -2,6 +2,7 @@
 All code related to fetching containers
 """
 import hashlib
+import json
 import logging
 import shutil
 import subprocess
@@ -116,14 +117,17 @@ def pull_container_from_ghcr(container_name: Path, tag: str, output_filename: st
     if output_filename is None:
         output_filename = f'{container_name}.sif'
 
+    # Determine docker URL early so both paths can use it
+    str_container_name = str(container_name)
+    docker_url = f'docker://ghcr.io/wintermutant/{str_container_name}:{tag}'
+
     # Check if already cached
     if cached := get_cached_file(Path(output_filename)):
         LOGGER.info('Found %s in cache', output_filename)
+        _emit_container_metadata(str_container_name, tag, str(cached), "cached", docker_url)
         return cached
 
     dest = CACHE_DIR / output_filename
-    str_container_name = str(container_name)
-    docker_url = f'docker://ghcr.io/wintermutant/{str_container_name}:{tag}'
 
     LOGGER.info('Pulling %s from GitHub Container Registry...', docker_url)
 
@@ -141,6 +145,7 @@ def pull_container_from_ghcr(container_name: Path, tag: str, output_filename: st
     try:
         subprocess.run(cmd, check=True)
         LOGGER.info('Successfully pulled %s to %s', container_name, dest)
+        _emit_container_metadata(str_container_name, tag, str(dest), "downloaded", docker_url)
         return dest
     except subprocess.CalledProcessError as e:
         LOGGER.error('Failed to pull container: %s', e)
@@ -170,17 +175,23 @@ def get_verified_sif_file(sif_name: str, sif_version: str):
     # sif_path = [(prodigal, 2.6.3), (program, version)]
     sif_path = Path(sif_name)
     LOGGER.info('SIF path: %s Version: %s', sif_path, sif_version)
+    docker_url = f'docker://ghcr.io/wintermutant/{sif_path}:{sif_version}'
 
     if cached := get_cached_file(sif_path):
+        _emit_container_metadata(sif_name, sif_version, str(cached), "cached", docker_url)
         return cached
     dest = CACHE_DIR / sif_path
     LOGGER.info('Destination: %s', dest)
-    # verified_sif_file = download_container_with_progress(url=sif_hack, dest=dest)
-    # pull_container_from_ghcr('prodigal', '2.6.3-v1.0')
     #TODO: un-hardcode this
     verified_sif_file = pull_container_from_ghcr(sif_path, sif_version)
     LOGGER.info('Verified sif: %s', verified_sif_file)
     return verified_sif_file
+
+
+def _emit_container_metadata(name: str, version: str, path: str, source: str, docker_url: str):
+    """Log structured container metadata for the task runner to parse."""
+    metadata = {"name": name, "version": version, "path": path, "source": source, "docker_url": docker_url}
+    LOGGER.info('__CONTAINER__:%s', json.dumps(metadata))
 
 
 def run_apptainer_container(app_obj: ApptainerKey, container_args: list[str]) -> int:
