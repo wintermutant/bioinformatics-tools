@@ -6,6 +6,7 @@ which controls SLURM batching and queueing, we can mainly run on login node.
 '''
 from datetime import datetime
 import logging
+import stat
 
 import paramiko
 
@@ -33,7 +34,7 @@ def get_genomes(location):
 
 def submit_ssh_job(cmd):
     '''Generator that streams remote output line-by-line via SSH.
-    Yields each line as it arrives from the remote process.
+    Yields a __WORKDIR__: metadata line first, then each output line as it arrives.
     '''
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -43,6 +44,10 @@ def submit_ssh_job(cmd):
     timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
     work_dir = f'/depot/lindems/data/margie/tests/{timestamp}'
     LOGGER.info('Running in working directory: %s', work_dir)
+
+    # Yield the working directory as metadata for the caller
+    yield f'__WORKDIR__:{work_dir}'
+
     wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && mkdir -p {work_dir} && cd {work_dir} && {cmd} 2>&1'  #TODO: I really don't like this, but points to uv/uvx
 
     # ---------------------- Meat and potatoes of execution ---------------------- #
@@ -143,3 +148,98 @@ def check_slurm_job_status(job_id):
         return {"job_name": job_name, "state": state, "elapsed_time": elapsed, "exists": True}
 
     return {"state": "NOT_FOUND", "elapsed_time": "0:00", "exists": False}
+
+
+def check_multiple_slurm_jobs(job_ids: list[str]) -> dict[str, dict]:
+    """Check status of multiple SLURM jobs in a single SSH call.
+
+    Returns a dict mapping each job_id to {"state": ..., "time": ...}.
+    """
+    if not job_ids:
+        return {}
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
+
+    results = {}
+    ids_str = ",".join(job_ids)
+
+    # Try squeue first for active jobs
+    stdin, stdout, stderr = ssh.exec_command(
+        f'squeue -j {ids_str} --format="%i %T %M" --noheader 2>/dev/null'
+    )
+    squeue_output = stdout.read().decode().strip()
+
+    found_ids = set()
+    if squeue_output:
+        for line in squeue_output.splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                jid, state, elapsed = parts[0], parts[1], parts[2]
+                results[jid] = {"state": state, "time": elapsed}
+                found_ids.add(jid)
+
+    # For any IDs not found in squeue, check sacct
+    missing = [jid for jid in job_ids if jid not in found_ids]
+    if missing:
+        missing_str = ",".join(missing)
+        stdin, stdout, stderr = ssh.exec_command(
+            f'sacct -j {missing_str} --format=JobID,State,Elapsed --noheader --parsable2 2>/dev/null'
+        )
+        sacct_output = stdout.read().decode().strip()
+        if sacct_output:
+            for line in sacct_output.splitlines():
+                parts = line.split("|")
+                if len(parts) >= 3:
+                    jid = parts[0].split(".")[0]  # strip .batch/.extern suffix
+                    if jid in missing and jid not in results:
+                        results[jid] = {"state": parts[1], "time": parts[2]}
+
+    ssh.close()
+    return results
+
+
+def list_remote_dir(remote_path: str) -> list[dict]:
+    """List files and directories in a remote path via SFTP.
+
+    Returns a list of dicts: {name, type, size}.
+    """
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
+
+    sftp = ssh.open_sftp()
+    entries = []
+    for attr in sftp.listdir_attr(remote_path):
+        entry_type = 'directory' if stat.S_ISDIR(attr.st_mode) else 'file'
+        entries.append({
+            'name': attr.filename,
+            'type': entry_type,
+            'size': attr.st_size,
+        })
+
+    sftp.close()
+    ssh.close()
+    return entries
+
+
+def stream_remote_file(remote_path: str):
+    """Generator that streams a remote file in chunks via SFTP.
+
+    Yields bytes chunks (8KB each).
+    """
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
+
+    sftp = ssh.open_sftp()
+    with sftp.open(remote_path, 'rb') as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            yield chunk
+
+    sftp.close()
+    ssh.close()

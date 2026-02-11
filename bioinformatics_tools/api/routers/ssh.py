@@ -6,6 +6,9 @@ import json
 import logging
 import os
 import datetime
+import re
+import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -84,17 +87,86 @@ async def run_shh(content: SlurmSend):
 jobs = {}
 executor = ThreadPoolExecutor(max_workers=4)
 
-def run_margie_task(job_id: str, genome_path: str):
-    '''Runs in a thread pool worker'''
+# Regex patterns for parsing SLURM job IDs from Snakemake log output
+SLURM_SUBMIT_RE = re.compile(r'SLURM jobid (\d+) \(log:.*?/slurm_logs/(?:rule_|group_[^_]+_)(\w+)/')
+SLURM_SUBMIT_FALLBACK_RE = re.compile(r'SLURM jobid (\d+)')
+# Matches: "4 of 4 steps (100%) done" (with possible ANSI color codes)
+STEPS_PROGRESS_RE = re.compile(r'(\d+) of (\d+) steps \((\d+)%\) done')
+
+
+def _slurm_status_checker(job_id: str):
+    """Daemon thread that periodically checks SLURM job statuses."""
+    while jobs.get(job_id, {}).get("status") == "running":
+        slurm_jobs = jobs[job_id].get("slurm_jobs", [])
+        active_ids = [sj["job_id"] for sj in slurm_jobs if sj["status"] not in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT")]
+        if active_ids:
+            try:
+                statuses = ssh_slurm.check_multiple_slurm_jobs(active_ids)
+                for sj in slurm_jobs:
+                    if sj["job_id"] in statuses:
+                        sj["status"] = statuses[sj["job_id"]]["state"]
+                        sj["time"] = statuses[sj["job_id"]]["time"]
+            except Exception as e:
+                LOGGER.warning("SLURM status check failed: %s", e)
+        # Wait 15 seconds between checks
+        for _ in range(15):
+            if jobs.get(job_id, {}).get("status") != "running":
+                break
+            time.sleep(1)
+
+
+def run_ssh_task(job_id: str, command: str):
+    """Generic SSH task runner with log parsing, SLURM tracking, and progress parsing."""
     jobs[job_id]["status"] = "running"
-    jobs[job_id]["phase"] = "Submitting to (Negishi (SSH)"
+    jobs[job_id]["phase"] = "Submitting to Negishi (SSH)"
     jobs[job_id]["logs"] = ""
+
+    # Start SLURM status checker daemon thread
+    checker = threading.Thread(target=_slurm_status_checker, args=(job_id,), daemon=True)
+    checker.start()
+
     try:
-        command = f"uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf margie input: {genome_path}"
-        # submit_ssh_job is a generator - consume it and collect output
         for line in ssh_slurm.submit_ssh_job(cmd=command):
+            # Detect work_dir metadata from submit_ssh_job
+            if line.startswith("__WORKDIR__:"):
+                jobs[job_id]["work_dir"] = line.split(":", 1)[1]
+                continue
+
+            # Parse container metadata from bapptainer log lines
+            if "__CONTAINER__:" in line:
+                try:
+                    container_json = line.split("__CONTAINER__:", 1)[1]
+                    jobs[job_id]["containers"].append(json.loads(container_json))
+                except (json.JSONDecodeError, IndexError):
+                    pass
+
             jobs[job_id]["logs"] += line + "\n"
-            # Update phase based on output if needed
+
+            # Parse SLURM job IDs as they appear in the log stream
+            match = SLURM_SUBMIT_RE.search(line)
+            if match:
+                slurm_id, rule_name = match.groups()
+                jobs[job_id]["slurm_jobs"].append({
+                    "job_id": slurm_id, "rule": rule_name,
+                    "status": "SUBMITTED", "time": "00:00:00"
+                })
+            elif SLURM_SUBMIT_FALLBACK_RE.search(line):
+                fallback = SLURM_SUBMIT_FALLBACK_RE.search(line)
+                slurm_id = fallback.group(1)
+                jobs[job_id]["slurm_jobs"].append({
+                    "job_id": slurm_id, "rule": "unknown",
+                    "status": "SUBMITTED", "time": "00:00:00"
+                })
+
+            # Parse Snakemake step progress (e.g. "2 of 4 steps (50%) done")
+            progress_match = STEPS_PROGRESS_RE.search(line)
+            if progress_match:
+                done, total, pct = progress_match.groups()
+                jobs[job_id]["steps_done"] = int(done)
+                jobs[job_id]["steps_total"] = int(total)
+                jobs[job_id]["progress"] = int(pct)
+
+            # Update phase based on output
             if "snakemake" in line.lower():
                 jobs[job_id]["phase"] = "Running Snakemake"
 
@@ -115,11 +187,14 @@ async def run_margie(genome_data: GenomeSend):
         "phase": "Initializing",
         "genome_path": genome_data.genome_path,
         "sub_jobs": [],
+        "slurm_jobs": [],
+        "containers": [],
+        "work_dir": None,
         "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
-    # Submit to thread pool - returns immediately
-    executor.submit(run_margie_task, job_id, genome_data.genome_path)
+    command = f"uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf margie input: {genome_data.genome_path}"
+    executor.submit(run_ssh_task, job_id, command)
 
     return {"success": True, "job_id": job_id, "message": "Job submitted successfully"}
 
@@ -130,6 +205,61 @@ async def get_job_status(job_id: str):
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs[job_id]
+
+
+@router.get("/job_files/{job_id}")
+async def get_job_files(job_id: str, subdir: str = ""):
+    """List output files for a completed job via SFTP."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    work_dir = jobs[job_id].get("work_dir")
+    if not work_dir:
+        raise HTTPException(status_code=400, detail="No working directory available for this job")
+
+    # Validate subdir: no absolute paths, no traversal
+    if subdir and (subdir.startswith("/") or ".." in subdir.split("/")):
+        raise HTTPException(status_code=400, detail="Invalid subdirectory path")
+
+    target_dir = f"{work_dir}/{subdir}".rstrip("/") if subdir else work_dir
+
+    try:
+        entries = ssh_slurm.list_remote_dir(target_dir)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Directory not found on remote")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list remote directory: {str(e)}")
+
+    return {"work_dir": work_dir, "subdir": subdir, "entries": entries}
+
+
+@router.get("/download_file/{job_id}")
+async def download_file(job_id: str, path: str):
+    """Download a file from a job's working directory via SFTP."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    work_dir = jobs[job_id].get("work_dir")
+    if not work_dir:
+        raise HTTPException(status_code=400, detail="No working directory available for this job")
+
+    # Security: reject absolute paths and traversal
+    if path.startswith("/") or ".." in path.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    remote_path = f"{work_dir}/{path}"
+    filename = path.split("/")[-1]
+
+    try:
+        return StreamingResponse(
+            ssh_slurm.stream_remote_file(remote_path),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found on remote")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
 
 async def job_status_generator(job_id: str):
