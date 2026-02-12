@@ -7,9 +7,11 @@ import paramiko
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from bioinformatics_tools.utilities.ssh_connection import default_connection
+
 LOGGER = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1/ssh", tags=["ssh"])
+router = APIRouter(prefix="/v1/files", tags=["files"])
 
 
 class SSHUploadResponse(BaseModel):
@@ -34,16 +36,8 @@ async def upload_file_to_remote(
 
         LOGGER.info(f"Received file: {file.filename} ({file_size} bytes)")
 
-        # SSH connection details - TODO: Move to config/env vars
-        ssh_host = 'negishi.rcac.purdue.edu'
-        ssh_username = 'ddeemer'
-
         # Connect via SSH
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-        LOGGER.info(f"Connecting to {ssh_host}...")
-        ssh.connect(ssh_host, username=ssh_username)
+        ssh = default_connection.connect()
 
         # Create remote directory if it doesn't exist
         stdin, stdout, stderr = ssh.exec_command(f'mkdir -p {remote_path}')

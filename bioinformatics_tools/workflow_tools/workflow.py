@@ -10,10 +10,8 @@ from pathlib import Path
 from bioinformatics_tools.caragols import clix
 from bioinformatics_tools.caragols.condo import CxNode
 from bioinformatics_tools.file_classes.base_classes import command
-from bioinformatics_tools.utilities import ssh_slurm
 from bioinformatics_tools.workflow_tools.bapptainer import (
-    CacheSifError, cache_sif_files, get_verified_sif_file,
-    run_apptainer_container)
+    CacheSifError, cache_sif_files, run_apptainer_container)
 from bioinformatics_tools.workflow_tools.models import (ApptainerKey,
                                                         WorkflowKey)
 from bioinformatics_tools.workflow_tools.output_cache import restore_all, store_all
@@ -66,9 +64,6 @@ class WorkflowBase(clix.App):
 
         super().__init__()
     
-    def build_snakemake_command(self) -> list[str]:
-        pass
-    
     def build_executable(self, key: WorkflowKey, config_dict: dict = None, mode='notdev') -> list[str]:
         '''Given a workflow data object, with access to config and command line args,
         build out a snakemake command'''
@@ -119,20 +114,10 @@ class WorkflowBase(clix.App):
             LOGGER.error('Critical ERROR during subprocess.run(%s): %s', wf_command, e)
             self.failed(f'Critical ERROR during subprocess.run({wf_command}): {e}')
         return 0
-    
-    def _run_workflow_ssh(self, cmd, credentials=False):
-        '''connect to ssh and execute the workflow instead of locally
-        this would be using paramiko's ssh client instead of subprocess.run
-        '''
-        result = ssh_slurm.submit_ssh_job(cmd)
-        return result
 
-    
     @command
-    def do_example(self, ssh=False):
-        '''example workflow to execute
-        This shouldn not need to worry about SSH at all'''
-        #TODO: Return a report object? Or just 0 vs. 1, or None?
+    def do_example(self):
+        '''example workflow to execute'''
 
         LOGGER.info('Config:\n%s', self.conf.show())
 
@@ -165,39 +150,30 @@ class WorkflowBase(clix.App):
         # --- Step 3 - get program-specific params and send to snakemake as config --- #
         prodigal_config = self.conf.get('prodigal')
         threads = prodigal_config.get('threads')
-        #TODO: Is there a way to automatically get all config from prodigal
-        # or do we want to control this here?
+        #TODO: Is there a way to automatically get all config from prodigal or control here
         smk_config = {
             'input_fasta': input_file,
             'output_fasta': output_file,
             'prodigal_threads': threads
         }
 
-        # Target the final output to chain rules together
-        # May only need the final target?
-        final_target = "results/done.txt"
-
         # -------- TODO: Step 3.5 - Download / ensure .sif file is downloaded -------- #
-        # ~/.cache/bioinformatics-tools/prodigal.sif --> multiple for some snakemake pipelines
-        get_verified_sif_file(selected_wf.sif_files)
+        try:
+            cache_sif_files(selected_wf.sif_files)
+        except CacheSifError as e:
+            LOGGER.critical('Error with cache_sif_files: %s', e)
+            self.failed(f'Error with cache_sif_files: {e}')
 
         # ----------------------- Step 4 - build the executable ---------------------- #
         wf_command = self.build_executable(selected_wf, config_dict=smk_config)
-        # wf_command = self.build_snakemake_command(selected_wf, default_output)
         LOGGER.info('Running snakemake command: %s', wf_command)
         str_smk = ' '.join(wf_command)
         LOGGER.info('String snakemake: %s', str_smk)
         print(f'\n=== SNAKEMAKE COMMAND ===\n{str_smk}\n========================\n')
 
         # ------ Step 5 Execute the actual workflow (happens within our UV env) ------ #
-        if not ssh:  #TODO SSH compatibility
-            self._run_workflow(wf_command)
-            self.succeeded(msg="All good in the neighborhood (AppleBees TM)")
-        # else:
-            # self._run_workflow_ssh(str_smk)
-            # self.succeeded(msg="Ran on remote cluster all good.")
-
-        #TODO: Option to run via subprocess locally vs. SSH login node vs. SSH+Slurm
+        self._run_workflow(wf_command)
+        self.succeeded(msg="All good in the neighborhood (AppleBees TM)")
     
 
     def get_prg_args(self, config_group):
@@ -239,8 +215,7 @@ class WorkflowBase(clix.App):
         if not (container := apptainer_keys.get('prodigal')):
             self.failed('No known match for "prodigal"')
             return
-        # wf_command = self.build_snakemake_command(selected_wf, default_output)
-        # self._run_workflow(wf_command)
+
         prg_args = self.get_prg_args(config_group='prodigal')
         prg_args.insert(0, EXECUTABLE)
         LOGGER.info('Program arguments: %s', prg_args)
@@ -248,10 +223,8 @@ class WorkflowBase(clix.App):
         self.succeeded(msg='Successfully ran prodigal!')
     
     @command
-    def do_margie(self, ssh=False, mode='dev'):
-        '''example workflow to execute
-        This shouldn not need to worry about SSH at all'''
-        #TODO: Return a report object? Or just 0 vs. 1, or None?
+    def do_margie(self, mode='dev'):
+        '''run margie workflow'''
 
         LOGGER.info('Config:\n%s', self.conf.show())
 
@@ -268,7 +241,7 @@ class WorkflowBase(clix.App):
 
         # ------- Step 2 - Get the appropriate output file from the input file ------- #
         # Derive output filename from input (e.g., file.fasta -> file-output.txt)
-        # Basically we need a way to trace input to final output
+        # Basically we need a way to trace input to final output and use the stem as SAMPLE
         input_path = Path(input_file)
         out_prodigal = f"prodigal/{input_path.stem}-prodigal.tkn"
         out_prodigal_faa = f"prodigal/{input_path.stem}-prodigal.faa"
@@ -284,19 +257,12 @@ class WorkflowBase(clix.App):
         LOGGER.info('out_prodigal file: %s', out_prodigal)
         LOGGER.info('out_dbcan file: %s', out_dbcan)
 
-        # Log which snakemake executable will be used
-        try:
-            which_result = subprocess.run(['which', 'snakemake'], capture_output=True, text=True, check=True)
-            LOGGER.info('Using snakemake from: %s', which_result.stdout.strip())
-        except subprocess.CalledProcessError:
-            LOGGER.warning('Could not find snakemake executable in PATH')
-
         # --- Step 3 - get program-specific params and send to snakemake as config --- #
         prodigal_config = self.conf.get('prodigal')
         threads = prodigal_config.get('threads')
         margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
-        #TODO: Is there a way to automatically get all config from prodigal
-        # or do we want to control this here?
+        #TODO: way to automatically get all config from prodigal or do control this here?
+        # TODO: These can probably be default values specified in margie.smk
         smk_config = {
             'input_fasta': input_file,
             'out_prodigal': out_prodigal,
@@ -313,7 +279,7 @@ class WorkflowBase(clix.App):
             'margie_db': margie_db,
         }
 
-        # -------- TODO: Step 3.5 - Download / ensure .sif file is downloaded -------- #
+        # ------: Step 3.5 - Download / ensure .sif file is downloaded -------- #
         # ~/.cache/bioinformatics-tools/prodigal.sif --> multiple for some snakemake pipelines
         try:
             cache_sif_files(selected_wf.sif_files)
@@ -322,6 +288,9 @@ class WorkflowBase(clix.App):
             self.failed(f'Error with cache_sif_files: {e}')
 
         # ----------- Step 3.6 - Restore cached outputs from the DB ----------- #
+        # This is super important and revives the working directory with cache
+        # so snakemake can use its default DAG logic from the database. e.g. - places previously generated output
+        # files into the working directory so snakemake knows which rules to skip
         cache_map = {
             'prodigal': [out_prodigal, out_prodigal_faa],
             'prodigal_db': [out_prodigal_db],
@@ -335,22 +304,16 @@ class WorkflowBase(clix.App):
 
         # ----------------------- Step 4 - build the executable ---------------------- #
         wf_command = self.build_executable(selected_wf, config_dict=smk_config, mode=mode)
-        # wf_command = self.build_snakemake_command(selected_wf, default_output)
+
         LOGGER.info('Running snakemake command: %s', wf_command)
         str_smk = ' '.join(wf_command)
-        LOGGER.info('String snakemake: %s', str_smk)
-        print(f'\n=== SNAKEMAKE COMMAND ===\n{str_smk}\n========================\n')
+        LOGGER.info('\n=== SNAKEMAKE COMMAND ===\n%s\n========================\n', str_smk)
 
         # ------ Step 5 Execute the actual workflow (happens within our UV env) ------ #
-        if not ssh:  #TODO SSH compatibility
-            self._run_workflow(wf_command)
+        self._run_workflow(wf_command)
 
-            # ---- Step 5.5 - Store new outputs into DB cache ---- #
-            store_all(margie_db, input_file, cache_map)
+        # ---- Step 5.5 - Store new outputs into DB cache ---- #
+        store_all(margie_db, input_file, cache_map)
 
-            self.succeeded(msg="All good in the neighborhood (AppleBees TM)")
-        # else:
-            # self._run_workflow_ssh(str_smk)
-            # self.succeeded(msg="Ran on remote cluster all good.")
-
-        #TODO: Option to run via subprocess locally vs. SSH login node vs. SSH+Slurm
+        # ------------------- Step 6 - Provide output status report ------------------ #
+        self.succeeded(msg="All good in the neighborhood (AppleBees TM)")
