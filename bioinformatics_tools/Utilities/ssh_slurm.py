@@ -1,34 +1,30 @@
 '''
-This is essentially a linker module that uses ssh to run $ dane commands
-This allows the CLI to be ported and ran through SSH to interface with HPCs,
-centering around running login node and SLURM commands. Since we use Snakemake,
+SSH-based SLURM operations for interfacing with HPC clusters.
+
+Uses paramiko to run login node and SLURM commands. Since we use Snakemake,
 which controls SLURM batching and queueing, we can mainly run on login node.
 '''
 from datetime import datetime
 import logging
-import stat
 
-import paramiko
+from bioinformatics_tools.utilities.ssh_connection import default_connection
 
 LOGGER = logging.getLogger(__name__)
 
+
 def get_genomes(location):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print('Waiting to connect...')
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
-    print(f'Connected!\nls -lah {location}')
+    """List genome files at a remote path via SSH ls."""
+    ssh = default_connection.connect()
+    LOGGER.info('ls -lah %s', location)
     stdin, stdout, stderr = ssh.exec_command(f'ls -lah {location}')
     output = stdout.read().decode()
     error = stderr.read().decode()
     ssh.close()
 
     if error:
-        print(f'Error: {error}')
+        LOGGER.warning('Error listing genomes: %s', error)
 
-    # Split output into lines and filter out empty lines
     files = [line.strip() for line in output.split('\n') if line.strip()]
-    print(f'Found files...\n{files}')
     return files
 
 
@@ -36,9 +32,7 @@ def submit_ssh_job(cmd):
     '''Generator that streams remote output line-by-line via SSH.
     Yields a __WORKDIR__: metadata line first, then each output line as it arrives.
     '''
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
+    ssh = default_connection.connect()
     LOGGER.info('Connected!')
 
     timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
@@ -62,14 +56,10 @@ def submit_ssh_job(cmd):
 
 
 def submit_slurm_job(script_content, nodes=1, cpus=4, mem='4G', time='00:30:00'):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print(f'Waiting to connect...')
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
-    print(f'Connected!')
+    """Write a SLURM batch script and submit it via sbatch."""
+    ssh = default_connection.connect()
 
     stdin, stdout, stderr = ssh.exec_command('touch im-here.flag')
-    # stdin, stdout, stderr = ssh.exec_command('touch ~/myfile2.txt')
 
     # Create SLURM script
     slurm_script = f"""#!/bin/bash
@@ -95,15 +85,13 @@ source /etc/profile
 
     job_id = stdout.read().decode().strip()
     try:
-        stdin_content = stdin.read().decode().strip()
-    except OSError:
-        stdin_content = 'None'
-    try:
         stderr_content = stderr.read().decode().strip()
     except OSError:
         stderr_content = 'None'
-    print(f'Inside of submit_slurm_job:\nstdin: {stdin_content}\nstdout: {job_id},\nstderr: {stderr_content}\n')
+
+    LOGGER.info('submit_slurm_job stdout: %s, stderr: %s', job_id, stderr_content)
     ssh.close()
+
     # Extract just the job number (sbatch returns "Submitted batch job 12345")
     if "Submitted batch job" in job_id:
         job_id = job_id.split()[-1]
@@ -111,20 +99,17 @@ source /etc/profile
 
 
 def check_slurm_job_status(job_id):
-    """
-    Check the status of a SLURM job
+    """Check the status of a single SLURM job via squeue then sacct.
+
     Returns: dict with status info (state, elapsed_time, etc.)
     """
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
+    ssh = default_connection.connect()
 
-    # Use squeue to check if job is running/~pending
+    # Use squeue to check if job is running/pending
     stdin, stdout, stderr = ssh.exec_command(f'squeue -j {job_id} --format="%T %M %j %a %l" --noheader')
     squeue_output = stdout.read().decode().strip()
 
     if squeue_output:
-        # Job is still in queue (PENDING or RUNNING)
         parts = squeue_output.split()
         state = parts[0] if len(parts) > 0 else "UNKNOWN"
         elapsed = parts[1] if len(parts) > 1 else "0:00"
@@ -158,9 +143,7 @@ def check_multiple_slurm_jobs(job_ids: list[str]) -> dict[str, dict]:
     if not job_ids:
         return {}
 
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
+    ssh = default_connection.connect()
 
     results = {}
     ids_str = ",".join(job_ids)
@@ -198,48 +181,3 @@ def check_multiple_slurm_jobs(job_ids: list[str]) -> dict[str, dict]:
 
     ssh.close()
     return results
-
-
-def list_remote_dir(remote_path: str) -> list[dict]:
-    """List files and directories in a remote path via SFTP.
-
-    Returns a list of dicts: {name, type, size}.
-    """
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
-
-    sftp = ssh.open_sftp()
-    entries = []
-    for attr in sftp.listdir_attr(remote_path):
-        entry_type = 'directory' if stat.S_ISDIR(attr.st_mode) else 'file'
-        entries.append({
-            'name': attr.filename,
-            'type': entry_type,
-            'size': attr.st_size,
-        })
-
-    sftp.close()
-    ssh.close()
-    return entries
-
-
-def stream_remote_file(remote_path: str):
-    """Generator that streams a remote file in chunks via SFTP.
-
-    Yields bytes chunks (8KB each).
-    """
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('negishi.rcac.purdue.edu', username='ddeemer')
-
-    sftp = ssh.open_sftp()
-    with sftp.open(remote_path, 'rb') as f:
-        while True:
-            chunk = f.read(8192)
-            if not chunk:
-                break
-            yield chunk
-
-    sftp.close()
-    ssh.close()
