@@ -97,7 +97,7 @@ rule run_cog:
         db=config.get('cog_db', '/depot/lindems/data/Databases/cog/')
     threads: config.get('cog_threads', 4)
     resources:
-        mem_mb=4096
+        mem_mb=8192
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
     shell:
         """

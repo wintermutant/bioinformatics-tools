@@ -1,125 +1,54 @@
 """
-Fasta file processing endpoints
+SSH and job management endpoints.
+
+Thin routing layer — delegates to job_store, job_runner, and ssh utilities.
 """
-import asyncio
-import json
 import logging
-import os
-import datetime
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from pymongo import MongoClient
 
+from bioinformatics_tools.api.models import SlurmSend, GenomeSend
+from bioinformatics_tools.api.services.job_store import job_store
+from bioinformatics_tools.api.services import job_runner
 from bioinformatics_tools.utilities import ssh_slurm
+from bioinformatics_tools.utilities import ssh_sftp
 
 LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/ssh", tags=["ssh"])
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password123@localhost:27017/")
-client = MongoClient(MONGO_URI)
-db = client['biotools']
-collection = db['dane_entries']
 
-
-class DaneEntry(BaseModel):
-    value: str
-
-
-# Endpoints
 @router.get("/health")
 async def health_check():
     """Test endpoint to verify API is working"""
     return {"status": "success"}
-    
 
-@router.get("/entries")
-async def get_dane_entries():
-    """Get all dane entries as JSON"""
-    entries = list(collection.find({}, {"_id": 0, "value": 1, "timestamp": 1}).sort("timestamp", -1))
-    return {"entries": entries}
-
-
-@router.post("/entries")
-async def create_dane_entry(entry: DaneEntry):
-    '''Keep as an example for adding to mongodb'''
-    from datetime import datetime
-    """Create a new dane entry"""
-    new_entry = {
-        "value": entry.value,
-        "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    }
-    collection.insert_one(new_entry)
-    return {"success": True, "entry": {"value": new_entry["value"], "timestamp": new_entry["timestamp"]}}
-
-
-class SlurmSend(BaseModel):
-    script: str
-
-
-class GenomeSend(BaseModel):
-    genome_path: str
 
 @router.post("/run_slurm")
 async def run_slurm(content: SlurmSend):
     """Submit a SLURM job and return the job ID immediately"""
     job_id = ssh_slurm.submit_slurm_job(script_content=content.script)
-    print(f'Inside of run_slurm, job id: {job_id}')
     return {"success": True, "job_id": job_id, "message": "Job submitted successfully"}
 
 
 @router.post("/run_ssh")
-async def run_shh(content: SlurmSend):
-    """Submit a SLURM job and return the job ID immediately"""
-    LOGGER.info('Running run_shh')
+async def run_ssh(content: SlurmSend):
+    """Execute an SSH command and return output"""
+    LOGGER.info('Running run_ssh')
     std_txt = ssh_slurm.submit_ssh_job(cmd=content.script)
-    LOGGER.info('Inside of run_shh. std_txt: %s', std_txt)
     return {"success": True, "std_txt": std_txt, "message": "Job submitted successfully"}
-
-# Job storage and executor
-jobs = {}
-executor = ThreadPoolExecutor(max_workers=4)
-
-def run_margie_task(job_id: str, genome_path: str):
-    '''Runs in a thread pool worker'''
-    jobs[job_id]["status"] = "running"
-    jobs[job_id]["phase"] = "Submitting to (Negishi (SSH)"
-    jobs[job_id]["logs"] = ""
-    try:
-        command = f"uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf margie input: {genome_path}"
-        # submit_ssh_job is a generator - consume it and collect output
-        for line in ssh_slurm.submit_ssh_job(cmd=command):
-            jobs[job_id]["logs"] += line + "\n"
-            # Update phase based on output if needed
-            if "snakemake" in line.lower():
-                jobs[job_id]["phase"] = "Running Snakemake"
-
-        jobs[job_id]["status"] = "completed"
-        jobs[job_id]["phase"] = "Done"
-    except Exception as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["logs"] += f"\nError: {str(e)}"
 
 
 @router.post("/run_margie")
 async def run_margie(genome_data: GenomeSend):
     """Takes in a genome path (on Negishi) and runs the margie pipeline"""
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {
-        "job_id": job_id,
-        "status": "pending",
-        "phase": "Initializing",
-        "genome_path": genome_data.genome_path,
-        "sub_jobs": [],
-        "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    }
+    job_store.create(job_id, genome_data.genome_path)
 
-    # Submit to thread pool - returns immediately
-    executor.submit(run_margie_task, job_id, genome_data.genome_path)
+    command = f"uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf margie input: {genome_data.genome_path}"
+    job_runner.submit_job(job_id, command)
 
     return {"success": True, "job_id": job_id, "message": "Job submitted successfully"}
 
@@ -127,64 +56,74 @@ async def run_margie(genome_data: GenomeSend):
 @router.get("/job_status/{job_id}")
 async def get_job_status(job_id: str):
     """Get status of a running job"""
-    if job_id not in jobs:
+    job = job_store.get(job_id)
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return jobs[job_id]
+    return job
 
 
-async def job_status_generator(job_id: str):
-    """Generator that yields SSE events with job status updates"""
-    last_state = None
-    last_update_time = 0
-    start_time = asyncio.get_event_loop().time()
+@router.get("/job_files/{job_id}")
+async def get_job_files(job_id: str, subdir: str = ""):
+    """List output files for a job via SFTP."""
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    while True:
-        try:
-            # Check job status
-            status = ssh_slurm.check_slurm_job_status(job_id)
-            print(f'Status: {status}')
-            current_state = status['state']
-            elapsed = status['elapsed_time']
+    work_dir = job.get("work_dir")
+    if not work_dir:
+        raise HTTPException(status_code=400, detail="No working directory available for this job")
 
-            # Calculate how long we've been checking
-            current_time = asyncio.get_event_loop().time()
-            check_duration = int(asyncio.get_event_loop().time() - start_time)
+    # Validate subdir: no absolute paths, no traversal
+    if subdir and (subdir.startswith("/") or ".." in subdir.split("/")):
+        raise HTTPException(status_code=400, detail="Invalid subdirectory path")
 
-            # Send update if state changed OR it's been 5 seconds since last update
-            should_send = (
-                current_state != last_state or
-                (current_time - last_update_time) >= 7
-            )
-            print(f'Should send: {should_send} --> current time: {current_time} last update: {last_update_time}')
+    target_dir = f"{work_dir}/{subdir}".rstrip("/") if subdir else work_dir
 
-            if should_send:
-                message = f"Job {current_state.lower()} (elapsed: {elapsed}, checking for: {check_duration}s)"
-                data = {'state': current_state, 'elapsed': elapsed, 'message': message}
-                yield f"data: {json.dumps(data)}\n\n"
-                last_state = current_state
-                last_update_time = current_time
+    try:
+        entries = ssh_sftp.list_remote_dir(target_dir)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Directory not found on remote")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list remote directory: {str(e)}")
 
-            # Stop streaming if job is done
-            if current_state in ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT', 'NOT_FOUND']:
-                data = {'state': current_state, 'elapsed': elapsed, 'done': True}
-                yield f"data: {json.dumps(data)}\n\n"
-                break
+    return {"work_dir": work_dir, "subdir": subdir, "entries": entries}
 
-            # Wait before checking again
-            await asyncio.sleep(10)
 
-        except Exception as e:
-            LOGGER.exception("Error checking job status")
-            data = {'error': f'Error checking status: {str(e)}'}
-            yield f"data: {json.dumps(data)}\n\n"
-            break
+@router.get("/download_file/{job_id}")
+async def download_file(job_id: str, path: str):
+    """Download a file from a job's working directory via SFTP."""
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    work_dir = job.get("work_dir")
+    if not work_dir:
+        raise HTTPException(status_code=400, detail="No working directory available for this job")
+
+    # Security: reject absolute paths and traversal
+    if path.startswith("/") or ".." in path.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    remote_path = f"{work_dir}/{path}"
+    filename = path.split("/")[-1]
+
+    try:
+        return StreamingResponse(
+            ssh_sftp.stream_remote_file(remote_path),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found on remote")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
 
 @router.get("/job_status/{job_id}/stream")
 async def stream_job_status(job_id: str):
     """SSE endpoint that streams real-time job status updates"""
     return StreamingResponse(
-        job_status_generator(job_id),
+        job_runner.job_status_generator(job_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -195,6 +134,6 @@ async def stream_job_status(job_id: str):
 
 @router.get("/all_genomes")
 async def all_genomes(path: str):
-    print(f'Getting genomes from the path: {path}')
+    """List genome files at a remote path"""
     genomes = ssh_slurm.get_genomes(path)
     return {"success": True, "Genomes": genomes}

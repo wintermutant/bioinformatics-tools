@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from bioinformatics_tools.api.routers import fasta, health, ssh
+from bioinformatics_tools.api.routers import dane, fasta, health, ssh
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +40,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(fasta.router)
+app.include_router(dane.router)
 app.include_router(health.router)
 app.include_router(ssh.router)
 
