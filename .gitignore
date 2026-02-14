@@ -47,5 +47,5 @@ share/python-wheels/
 MANIFEST
 
 # Personal
-**/tests/
-tests/**
+#**/tests/
+#tests/**

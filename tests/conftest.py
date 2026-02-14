@@ -78,6 +78,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "cli: marks tests that test CLI functionality"
     )
+    config.addinivalue_line(
+        "markers", "api: marks tests that test API endpoints"
+    )
 
 
 # Pytest collection configuration
@@ -87,6 +90,10 @@ def pytest_collection_modifyitems(config, items):
         # Mark CLI tests
         if "test_cli" in item.nodeid or "cli" in item.name.lower():
             item.add_marker(pytest.mark.cli)
+
+        # Mark API tests
+        if "test_api" in item.nodeid:
+            item.add_marker(pytest.mark.api)
         
         # Mark integration tests (tests that use subprocess or external files)
         if any(keyword in item.nodeid for keyword in ["subprocess", "real_test", "example_"]):
