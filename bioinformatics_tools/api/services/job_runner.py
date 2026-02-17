@@ -25,13 +25,14 @@ executor = ThreadPoolExecutor(max_workers=4)
 SLURM_SUBMIT_RE = re.compile(r'SLURM jobid (\d+) \(log:.*?/slurm_logs/(?:rule_|group_[^_]+_)(\w+)/')
 SLURM_SUBMIT_FALLBACK_RE = re.compile(r'SLURM jobid (\d+)')
 STEPS_PROGRESS_RE = re.compile(r'(\d+) of (\d+) steps \((\d+)%\) done')
+CACHE_HIT_RE = re.compile(r'Cache HIT for (\w+)')
 
 
 def _slurm_status_checker(job_id: str):
     """Daemon thread that periodically checks SLURM job statuses."""
     while job_store.get_status(job_id) == "running":
         slurm_jobs = job_store.get_slurm_jobs(job_id)
-        active_ids = [sj["job_id"] for sj in slurm_jobs if sj["status"] not in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT")]
+        active_ids = [sj["job_id"] for sj in slurm_jobs if sj["status"] not in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "CACHED")]
         if active_ids:
             try:
                 statuses = ssh_slurm.check_multiple_slurm_jobs(active_ids)
@@ -72,6 +73,16 @@ def run_ssh_task(job_id: str, command: str):
                     pass
 
             job_store.append_log(job_id, line)
+
+            # Parse cache-restored rules (from output_cache.py "Cache HIT for <tool>")
+            cache_match = CACHE_HIT_RE.search(line)
+            if cache_match:
+                rule_name = cache_match.group(1)
+                job_store.add_slurm_job(job_id, "—", rule_name)
+                # Immediately mark as CACHED so the checker skips it
+                for sj in job_store.get_slurm_jobs(job_id):
+                    if sj["rule"] == rule_name and sj["job_id"] == "—":
+                        sj["status"] = "CACHED"
 
             # Parse SLURM job IDs as they appear in the log stream
             match = SLURM_SUBMIT_RE.search(line)
