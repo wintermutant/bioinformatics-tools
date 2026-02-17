@@ -101,7 +101,9 @@ rule run_cog:
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
     shell:
         """
-        COGclassifier -i {input.faa} -o {params.outdir} -d {params.db} -t {threads} \
+        LOCAL_DB=$TMPDIR/cog_db
+        cp -r {params.db} "$LOCAL_DB"
+        COGclassifier -i {input.faa} -o {params.outdir} -d "$LOCAL_DB" -t {threads} \
         && touch {output.tkn}
         """
 
@@ -285,3 +287,4 @@ rule finalize:
         echo "Workflow completed! Input processed: {input}" > {output}
         cat {input} >> {output}
         """
+
