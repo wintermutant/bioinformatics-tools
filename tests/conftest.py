@@ -81,6 +81,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "api: marks tests that test API endpoints"
     )
+    config.addinivalue_line(
+        "markers", "workflow: marks tests that test workflow execution"
+    )
 
 
 # Pytest collection configuration
@@ -94,6 +97,10 @@ def pytest_collection_modifyitems(config, items):
         # Mark API tests
         if "test_api" in item.nodeid:
             item.add_marker(pytest.mark.api)
+
+        # Mark workflow tests
+        if "test_workflow" in item.nodeid:
+            item.add_marker(pytest.mark.workflow)
         
         # Mark integration tests (tests that use subprocess or external files)
         if any(keyword in item.nodeid for keyword in ["subprocess", "real_test", "example_"]):

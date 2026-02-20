@@ -20,6 +20,7 @@ import csv
 import hashlib
 import sqlite3
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,10 +30,13 @@ from pathlib import Path
 CREATE_RUN_LOG_SQL = """
 CREATE TABLE IF NOT EXISTS run_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
     input_hash TEXT NOT NULL,
     tool TEXT NOT NULL,
     input_path TEXT,
     row_count INTEGER,
+    rules_completed INTEGER,
+    status TEXT NOT NULL,
     loaded_at TEXT NOT NULL,
     UNIQUE(input_hash, tool)
 );
@@ -66,14 +70,20 @@ def _already_loaded(db_path: str, input_hash: str, tool: str) -> bool:
 
 def _record_load(db_path: str, input_hash: str, tool: str,
                  input_path: str, row_count: int) -> None:
-    """Record a successful load in the run_log table."""
+    """Record a successful annotation load in the run_log table.
+
+    rules_completed is always 0 here — it is only meaningful for snakemake
+    workflow runs (output_cache.py). row_count holds the number of annotation
+    rows inserted by this loader.
+    """
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(CREATE_RUN_LOG_SQL)
         conn.execute(
-            "INSERT OR IGNORE INTO run_log (input_hash, tool, input_path, row_count, loaded_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (input_hash, tool, input_path, row_count,
+            "INSERT OR IGNORE INTO run_log "
+            "(run_id, input_hash, tool, input_path, row_count, rules_completed, status, loaded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), input_hash, tool, input_path, row_count, 0, 'success',
              datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
