@@ -4,9 +4,9 @@ Invoked: $ dane_wf wf: example <params/options/io>
 '''
 import logging
 import re
-import shutil
 import subprocess
 import tempfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -14,13 +14,11 @@ from bioinformatics_tools.file_classes.base_classes import command
 from bioinformatics_tools.workflow_tools.bapptainer import (
     CacheSifError, cache_sif_files)
 from bioinformatics_tools.workflow_tools.models import WorkflowKey
-from bioinformatics_tools.workflow_tools.output_cache import restore_all, store_all
+from bioinformatics_tools.workflow_tools.output_cache import log_workflow_run, restore_all, store_all
 from bioinformatics_tools.workflow_tools.programs import ProgramBase
 
 LOGGER = logging.getLogger(__name__)
 WORKFLOW_DIR = Path(__file__).parent
-PROJECT_ROOT = WORKFLOW_DIR.parent.parent
-TEST_FILES = PROJECT_ROOT / 'test-files'
 
 
 workflow_keys: dict[str, WorkflowKey] = {
@@ -152,6 +150,9 @@ class WorkflowBase(ProgramBase):
 
     def _run_pipeline(self, key_name: str, smk_config: dict, cache_map: dict = None, mode='dev'):
         '''Shared pipeline execution: cache containers, restore outputs, run snakemake, store outputs.'''
+        run_id = str(uuid.uuid4())
+        LOGGER.info('Starting workflow "%s" run_id=%s', key_name, run_id)
+
         selected_wf = workflow_keys.get(key_name)
         if not selected_wf:
             self.failed(f'No workflow key found for "{key_name}"')
@@ -186,12 +187,17 @@ class WorkflowBase(ProgramBase):
 
         if proc.returncode != 0:
             LOGGER.error('Snakemake failed (rc=%d): %s', proc.returncode, result['rules_summary'])
+            if cache_map and db_path and input_file:
+                log_workflow_run(db_path, run_id, input_file, key_name,
+                                 result['rules_summary'].get('completed', 0), status='failed')
             self.failed(msg=f'Workflow "{key_name}" failed', dex=result)
             return proc.returncode
 
-        # Success — store outputs and report
+        # Success — store outputs and log the run
         if cache_map and db_path and input_file:
             store_all(db_path, input_file, cache_map)
+            log_workflow_run(db_path, run_id, input_file, key_name,
+                             result['rules_summary'].get('completed', 0), status='success')
 
         self.succeeded(msg=f'Workflow "{key_name}" completed successfully', dex=result)
 
@@ -215,77 +221,78 @@ class WorkflowBase(ProgramBase):
 
         self._run_pipeline('example', smk_config)
 
+    def _selftest_config(self, stem, tmpdir, inject_failure=False):
+        '''Build smk_config and cache_map for selftest workflows.'''
+        td = Path(tmpdir)
+        out_step_a = str(td / f"step_a/{stem}-step_a.out")
+        out_step_a_extra = str(td / f"step_a/{stem}-step_a.extra")
+        out_step_a_db = str(td / f"step_a/{stem}-step_a_db.tkn")
+        out_step_b = str(td / f"step_b/{stem}-step_b.out")
+        out_step_b_db = str(td / f"step_b/{stem}-step_b_db.tkn")
+        out_step_c_primary = str(td / f"step_c/{stem}-step_c.tsv")
+        out_step_c_secondary = str(td / f"step_c/{stem}-step_c_count.tsv")
+        out_step_c_db = str(td / f"step_c/{stem}-step_c_db.tkn")
+
+        margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
+
+        smk_config = {
+            'workdir': tmpdir,
+            'stem': stem,
+            'inject_failure': str(inject_failure).lower(),
+            'out_step_a': out_step_a,
+            'out_step_a_extra': out_step_a_extra,
+            'out_step_a_db': out_step_a_db,
+            'out_step_b': out_step_b,
+            'out_step_b_db': out_step_b_db,
+            'out_step_c_primary': out_step_c_primary,
+            'out_step_c_secondary': out_step_c_secondary,
+            'out_step_c_db': out_step_c_db,
+            'margie_db': margie_db,
+        }
+
+        cache_map = {
+            'step_a': [out_step_a, out_step_a_extra],
+            'step_a_db': [out_step_a_db],
+            'step_b': [out_step_b],
+            'step_b_db': [out_step_b_db],
+            'step_c': [out_step_c_primary, out_step_c_secondary],
+            'step_c_db': [out_step_c_db],
+        }
+
+        return smk_config, cache_map
+
     @command
     def do_quick_example(self, inject_failure=False):
-        '''Run the selftest workflow with DB cache restore/store (mirrors margie pipeline).'''
-        input_source = TEST_FILES / 'sample-a.txt'
-        db_source = TEST_FILES / 'sample.db'
-        stem = 'sample-a'
+        '''Run selftest with real margie.db cache (deterministic input — cached on second run).'''
+        stem = 'quick-example'
 
         with tempfile.TemporaryDirectory(prefix='dane_quick_') as tmpdir:
-            # Copy the committed DB so store_all doesn't modify the fixture
-            db_path = str(Path(tmpdir) / 'sample.db')
-            shutil.copy2(str(db_source), db_path)
+            # Deterministic content so the hash is stable across runs.
+            # First run: cache miss → snakemake runs → store_all caches.
+            # Second run: cache hit → restore_all writes files → snakemake skips.
+            tmp_input = str(Path(tmpdir) / f'{stem}.txt')
+            Path(tmp_input).write_text('quick-example deterministic input\n')
 
-            # Copy input into tmpdir so snakemake can find it
-            tmp_input = str(Path(tmpdir) / 'sample-a.txt')
-            shutil.copy2(str(input_source), tmp_input)
-
-            # Output paths (relative to workdir)
-            out_step_a = f"step_a/{stem}-step_a.out"
-            out_step_a_extra = f"step_a/{stem}-step_a.extra"
-            out_step_a_db = f"step_a/{stem}-step_a_db.tkn"
-            out_step_b = f"step_b/{stem}-step_b.out"
-            out_step_b_db = f"step_b/{stem}-step_b_db.tkn"
-            out_step_c_primary = f"step_c/{stem}-step_c.tsv"
-            out_step_c_secondary = f"step_c/{stem}-step_c_count.tsv"
-            out_step_c_db = f"step_c/{stem}-step_c_db.tkn"
-
-            smk_config = {
-                'workdir': tmpdir,
-                'input_file': tmp_input,
-                'stem': stem,
-                'inject_failure': str(inject_failure).lower(),
-                'out_step_a': out_step_a,
-                'out_step_a_extra': out_step_a_extra,
-                'out_step_a_db': out_step_a_db,
-                'out_step_b': out_step_b,
-                'out_step_b_db': out_step_b_db,
-                'out_step_c_primary': out_step_c_primary,
-                'out_step_c_secondary': out_step_c_secondary,
-                'out_step_c_db': out_step_c_db,
-                'margie_db': db_path,
-            }
-
-            cache_map = {
-                'step_a': [out_step_a, out_step_a_extra],
-                'step_a_db': [out_step_a_db],
-                'step_b': [out_step_b],
-                'step_b_db': [out_step_b_db],
-                'step_c': [out_step_c_primary, out_step_c_secondary],
-                'step_c_db': [out_step_c_db],
-            }
+            smk_config, cache_map = self._selftest_config(stem, tmpdir, inject_failure)
+            smk_config['input_file'] = tmp_input
 
             self._run_pipeline('selftest', smk_config, cache_map, mode='dev')
 
     @command
     def do_fresh_test(self, inject_failure=False):
-        '''Run the selftest workflow without cache (snakemake runs all touch rules from scratch).'''
-        stem = 'sample-a'
+        '''Run selftest with real margie.db — unique input each run so cache always misses.'''
+        stem = 'fresh-test'
 
         with tempfile.TemporaryDirectory(prefix='dane_freshtest_') as tmpdir:
-            # Create a dummy input file in the temp dir
-            tmp_input = str(Path(tmpdir) / 'sample-a.txt')
-            Path(tmp_input).write_text('sample input for fresh test\n')
+            # Unique content per run (includes timestamp) so the hash is always new.
+            # restore_all will miss → snakemake runs all rules → store_all caches.
+            tmp_input = str(Path(tmpdir) / f'{stem}.txt')
+            Path(tmp_input).write_text(f'fresh-test {self.timestamp}\n')
 
-            smk_config = {
-                'workdir': tmpdir,
-                'input_file': tmp_input,
-                'stem': stem,
-                'inject_failure': str(inject_failure).lower(),
-            }
+            smk_config, cache_map = self._selftest_config(stem, tmpdir, inject_failure)
+            smk_config['input_file'] = tmp_input
 
-            self._run_pipeline('selftest', smk_config, mode='dev')
+            self._run_pipeline('selftest', smk_config, cache_map, mode='dev')
 
     @command
     def do_margie(self, mode='dev'):
