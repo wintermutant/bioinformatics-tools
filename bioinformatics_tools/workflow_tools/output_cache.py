@@ -140,3 +140,52 @@ def store_all(db_path: str, input_file: str,
     for tool_name, output_paths in tool_outputs_map.items():
         store(db_path, input_file, tool_name, output_paths)
         LOGGER.info("Cached outputs for %s", tool_name)
+
+
+CREATE_RUN_LOG_SQL = """
+CREATE TABLE IF NOT EXISTS run_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    input_path TEXT,
+    row_count INTEGER,
+    rules_completed INTEGER,
+    status TEXT NOT NULL,
+    loaded_at TEXT NOT NULL
+);
+"""
+
+
+def log_workflow_run(db_path: str, run_id: str, input_file: str, workflow_name: str,
+                     rules_completed: int = 0, status: str = 'success') -> None:
+    """Insert a run_log row for this workflow execution.
+
+    The caller supplies the run_id (generated at the start of the pipeline) so
+    the same UUID covers the full run, including failure cases.
+
+    row_count is always 0 here — it is only meaningful for annotation loaders
+    (load_to_db.py). rules_completed holds the number of snakemake rules that
+    finished in this run.
+    """
+    if not Path(db_path).exists():
+        LOGGER.warning("Cannot write run_log: db not found at %s", db_path)
+        return
+
+    input_hash = _compute_file_hash(input_file)
+    now = datetime.now(timezone.utc).isoformat()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(CREATE_RUN_LOG_SQL)
+        conn.execute(
+            "INSERT INTO run_log "
+            "(run_id, input_hash, tool, input_path, row_count, rules_completed, status, loaded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (run_id, input_hash, workflow_name, input_file, 0, rules_completed, status, now),
+        )
+        conn.commit()
+        LOGGER.info("Logged workflow run: %s run_id=%s status=%s rules_completed=%d (hash %s...)",
+                    workflow_name, run_id, status, rules_completed, input_hash[:12])
+    finally:
+        conn.close()
