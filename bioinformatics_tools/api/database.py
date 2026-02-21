@@ -40,12 +40,13 @@ def init_db() -> None:
     try:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                username         TEXT    NOT NULL UNIQUE,
-                password_hash    TEXT    NOT NULL,
-                cluster_host     TEXT    NOT NULL,
-                cluster_username TEXT    NOT NULL,
-                created_at       TEXT    NOT NULL
+                id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+                username               TEXT    NOT NULL UNIQUE,
+                password_hash          TEXT    NOT NULL,
+                cluster_host           TEXT    NOT NULL,
+                cluster_username       TEXT    NOT NULL,
+                private_key_encrypted  TEXT    NOT NULL,
+                created_at             TEXT    NOT NULL
             )
         """)
         conn.commit()

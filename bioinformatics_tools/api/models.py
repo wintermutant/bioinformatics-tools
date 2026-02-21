@@ -34,6 +34,7 @@ class UserRegister(BaseModel):
     password: str
     cluster_host: str
     cluster_username: str
+    private_key: str   # plaintext SSH private key — encrypted before storage, never returned
 
 
 class UserLogin(BaseModel):
