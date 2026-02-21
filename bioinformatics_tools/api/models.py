@@ -25,3 +25,32 @@ class SlurmSend(BaseModel):
 
 class GenomeSend(BaseModel):
     genome_path: str
+
+
+# --- Auth models -------------------------------------------------------------
+
+class UserRegister(BaseModel):
+    username: str
+    password: str
+    cluster_host: str
+    cluster_username: str
+    private_key: str   # plaintext SSH private key — encrypted before storage, never returned
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str   # always "bearer"
+
+
+class UserProfile(BaseModel):
+    user_id: int
+    username: str
+    cluster_host: str
+    cluster_username: str
+    home_dir: str
+    created_at: str

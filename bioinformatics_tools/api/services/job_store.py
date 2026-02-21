@@ -17,10 +17,11 @@ class JobStore:
     def __init__(self):
         self._jobs: dict[str, dict] = {}
 
-    def create(self, job_id: str, genome_path: str) -> dict:
+    def create(self, job_id: str, genome_path: str, user_id: int | None = None) -> dict:
         """Initialize a new job entry with all default fields."""
         job = {
             "job_id": job_id,
+            "user_id": user_id,
             "status": "pending",
             "phase": "Initializing",
             "genome_path": genome_path,

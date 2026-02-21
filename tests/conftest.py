@@ -4,6 +4,18 @@ Pytest configuration and shared fixtures.
 import os
 import sys
 from pathlib import Path
+
+# --- BSP required env vars ---------------------------------------------------
+# auth.py reads BSP_SECRET_KEY and BSP_ENCRYPTION_KEY at *import time* and
+# raises RuntimeError if either is missing.  Set them here (module level,
+# before any test module imports the app) so pytest always starts cleanly.
+# setdefault() leaves real env vars (e.g. from CI secrets) untouched.
+from cryptography.fernet import Fernet
+
+os.environ.setdefault("BSP_SECRET_KEY", "pytest-only-secret-do-not-use-in-production")
+os.environ.setdefault("BSP_ENCRYPTION_KEY", Fernet.generate_key().decode())
+# -----------------------------------------------------------------------------
+
 import pytest
 
 # Add the project root to Python path so imports work
