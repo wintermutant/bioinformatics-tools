@@ -6,6 +6,9 @@ Usage:
     Production: dane-api (after installing with pip install .[api])
 """
 import logging
+from dotenv import load_dotenv
+load_dotenv()  # Must run before local imports that read env vars at import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
