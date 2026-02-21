@@ -36,7 +36,6 @@ _KEY_CLASSES = (
     paramiko.RSAKey,
     paramiko.Ed25519Key,
     paramiko.ECDSAKey,
-    paramiko.DSSKey,
 )
 
 
