@@ -10,7 +10,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from bioinformatics_tools.api.routers import dane, fasta, health, ssh, workflows
+from bioinformatics_tools.api.database import init_db
+from bioinformatics_tools.api.routers import auth, dane, fasta, health, ssh, workflows
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +39,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event('startup')
+def startup_event():
+    init_db()
+
+
 # Include routers
+app.include_router(auth.router)
 app.include_router(fasta.router)
 app.include_router(dane.router)
 app.include_router(health.router)
