@@ -14,11 +14,11 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from passlib.context import CryptContext
 
 from bioinformatics_tools.api.database import get_db
 
@@ -50,15 +50,13 @@ TOKEN_EXPIRE_MINUTES = 60 * 24 * 7   # 1 week
 
 # --- Password hashing --------------------------------------------------------
 
-_pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
-
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 # --- Private key encryption --------------------------------------------------
