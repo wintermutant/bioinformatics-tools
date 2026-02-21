@@ -36,10 +36,9 @@ def _build_connection(current_user: dict):
     )
 
 
-def _config_path(cluster_username: str) -> str:
+def _config_path(home_dir: str) -> str:
     """Remote path to the user's BSP config file."""
-    # TODO: make home dir dynamic via `echo $HOME` if clusters diverge from /home/<user>
-    return f'/home/{cluster_username}/.config/bioinformatics-tools/config.yaml'
+    return f'{home_dir}/.config/bioinformatics-tools/config.yaml'
 
 
 @router.get("/health")
@@ -65,7 +64,7 @@ async def ssh_status(current_user: dict = Depends(get_current_user)):
 async def get_config(current_user: dict = Depends(get_current_user)):
     """Read the user's ~/.config/bioinformatics-tools/config.yaml from their cluster via SFTP."""
     conn = _build_connection(current_user)
-    path = _config_path(current_user["cluster_username"])
+    path = _config_path(current_user["home_dir"])
     try:
         data = ssh_sftp.read_remote_yaml(path, connection=conn)
         return data
@@ -78,7 +77,7 @@ async def get_config(current_user: dict = Depends(get_current_user)):
 async def save_config(config: dict, current_user: dict = Depends(get_current_user)):
     """Write a config dict back to the user's cluster as YAML via SFTP."""
     conn = _build_connection(current_user)
-    path = _config_path(current_user["cluster_username"])
+    path = _config_path(current_user["home_dir"])
     try:
         ssh_sftp.write_remote_yaml(path, config, connection=conn)
         return {"success": True}

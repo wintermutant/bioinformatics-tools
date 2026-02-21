@@ -45,6 +45,7 @@ def init_db() -> None:
                 password_hash          TEXT    NOT NULL,
                 cluster_host           TEXT    NOT NULL,
                 cluster_username       TEXT    NOT NULL,
+                home_dir               TEXT    NOT NULL,
                 private_key_encrypted  TEXT    NOT NULL,
                 created_at             TEXT    NOT NULL
             )

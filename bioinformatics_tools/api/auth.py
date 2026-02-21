@@ -122,7 +122,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
     with get_db() as db:
         row = db.execute(
-            '''SELECT id, username, cluster_host, cluster_username, private_key_encrypted
+            '''SELECT id, username, cluster_host, cluster_username, home_dir, private_key_encrypted
                FROM users WHERE id = ?''',
             (user_id,)
         ).fetchone()
@@ -135,5 +135,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         'username': row['username'],
         'cluster_host': row['cluster_host'],
         'cluster_username': row['cluster_username'],
+        'home_dir': row['home_dir'],
         'private_key_encrypted': row['private_key_encrypted'],
     }

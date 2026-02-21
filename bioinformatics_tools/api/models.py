@@ -52,4 +52,5 @@ class UserProfile(BaseModel):
     username: str
     cluster_host: str
     cluster_username: str
+    home_dir: str
     created_at: str

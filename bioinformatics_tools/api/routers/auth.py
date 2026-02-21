@@ -26,6 +26,7 @@ from bioinformatics_tools.api.models import (
     UserProfile,
     UserRegister,
 )
+from bioinformatics_tools.utilities.ssh_connection import make_user_connection
 
 LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +69,30 @@ def register(body: UserRegister):
     """
     _validate_private_key(body.private_key)
 
+    # SSH in before writing anything to DB — proves the credentials work and
+    # auto-detects the user's home directory on their cluster.
+    try:
+        conn = make_user_connection(body.cluster_host, body.cluster_username, body.private_key)
+        ssh = conn.connect()
+        _, stdout, _ = ssh.exec_command('echo $HOME')
+        home_dir = stdout.read().decode().strip()
+        ssh.close()
+        if not home_dir:
+            raise ValueError('Remote returned empty $HOME')
+    except Exception as exc:
+        LOGGER.warning(
+            'SSH verification failed for %s@%s during registration: %s',
+            body.cluster_username, body.cluster_host, exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f'Could not connect to {body.cluster_host} as {body.cluster_username}. '
+                'Check your host, username, and private key, and make sure you have added '
+                'the BSP public key to your ~/.ssh/authorized_keys on the cluster.'
+            )
+        )
+
     created_at = datetime.now(timezone.utc).isoformat()
     password_hash = hash_password(body.password)
     private_key_encrypted = encrypt_private_key(body.private_key)
@@ -77,10 +102,10 @@ def register(body: UserRegister):
             cursor = db.execute(
                 '''INSERT INTO users
                        (username, password_hash, cluster_host, cluster_username,
-                        private_key_encrypted, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)''',
+                        home_dir, private_key_encrypted, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (body.username, password_hash, body.cluster_host,
-                 body.cluster_username, private_key_encrypted, created_at)
+                 body.cluster_username, home_dir, private_key_encrypted, created_at)
             )
             user_id = cursor.lastrowid
     except Exception as exc:
@@ -133,7 +158,7 @@ def me(current_user: dict = Depends(get_current_user)):
     """
     with get_db() as db:
         row = db.execute(
-            'SELECT id, username, cluster_host, cluster_username, created_at FROM users WHERE id = ?',
+            'SELECT id, username, cluster_host, cluster_username, home_dir, created_at FROM users WHERE id = ?',
             (current_user['user_id'],)
         ).fetchone()
 
@@ -145,5 +170,6 @@ def me(current_user: dict = Depends(get_current_user)):
         username=row['username'],
         cluster_host=row['cluster_host'],
         cluster_username=row['cluster_username'],
+        home_dir=row['home_dir'],
         created_at=row['created_at'],
     )
