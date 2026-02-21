@@ -11,7 +11,7 @@ class TestCLIXSimple:
     
     def test_default_config_file_exists(self):
         """Test that the default config file exists and is valid YAML."""
-        config_path = Path("bioinformatics_tools/caragols/config-caragols.yaml")
+        config_path = Path("~/.config/bioinformatics-tools/config.yaml").expanduser()
         assert config_path.exists(), "Default config file should exist"
         
         # Test that it's valid YAML
@@ -37,4 +37,4 @@ class TestCLIXSimple:
         from bioinformatics_tools.caragols import clix
         
         assert hasattr(clix, 'App')
-        assert clix.App.config_filename == 'config-caragols.yaml'
+        assert clix.App.config_filename == 'config.yaml'

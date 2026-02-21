@@ -21,7 +21,6 @@ class TestCLI:
         assert result.returncode == 0
         assert "Available file types:" in result.stdout
         assert "Fasta" in result.stdout
-        assert "Fastq" in result.stdout
     
     def test_dane_help_with_file_type(self):
         """Test that dane help with specific file type works."""

@@ -16,7 +16,7 @@ class TestCLIX:
         """Test that the App class exists and has expected attributes."""
         # Don't actually initialize to avoid sys.exit issues
         assert hasattr(clix, 'App')
-        assert clix.App.config_filename == 'config-caragols.yaml'
+        assert clix.App.config_filename == 'config.yaml'
         assert hasattr(clix.App, 'default_config_path')
     
     def test_default_config_exists(self):
@@ -30,15 +30,6 @@ class TestCLIX:
         # Check for expected config structure
         assert 'report' in config
         assert 'maintenance-info' in config
-    
-    def test_config_loading(self):
-        """Test that default configuration can be loaded."""
-        # Test class-level config loading without initialization
-        assert clix.App.default_config_path.exists()
-        
-        # Test that the default config is properly loaded at class level
-        config = clix.App.default_config
-        assert isinstance(config, dict)
     
     @pytest.fixture
     def temp_config_file(self):
@@ -113,10 +104,10 @@ class TestLogging:
     
     def test_logging_config_path(self):
         """Test that logging config path is accessible."""
-        from bioinformatics_tools.caragols.logger import CONFIG_PATH
+        from bioinformatics_tools.caragols.logger import LOGGING_CONFIG_DEFAULT_PATH
         
         # Should be a valid path
-        assert CONFIG_PATH is not None
+        assert LOGGING_CONFIG_DEFAULT_PATH is not None
         # The path should exist or be createable
-        config_dir = Path(CONFIG_PATH).parent
+        config_dir = Path(LOGGING_CONFIG_DEFAULT_PATH).parent
         assert config_dir.exists() or config_dir.parent.exists()

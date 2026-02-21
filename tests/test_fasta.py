@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 import pytest
 
-from bioinformatics_tools.FileClasses.Fasta import Fasta
+from bioinformatics_tools.file_classes.Fasta import Fasta
 
 
 class TestFasta:
