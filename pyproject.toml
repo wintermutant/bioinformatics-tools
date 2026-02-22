@@ -53,6 +53,12 @@ test = [
     "httpx>=0.23.0",
 ]
 
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0",
+    "httpx>=0.23.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/Diet-Microbiome-Interactions-Lab/GeneralTools"
 
