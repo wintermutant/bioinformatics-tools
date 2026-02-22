@@ -213,7 +213,7 @@ class TestSSHEndpointsMocked:
     @patch("bioinformatics_tools.api.routers.ssh.job_runner")
     def test_run_margie(self, mock_runner, mock_build_conn, authed_client):
         resp = authed_client.post(
-            "/v1/ssh/run_margie",
+            "/v1/ssh/run_workflow",
             json={"genome_path": "/depot/genomes/ecoli.fasta"},
         )
         assert resp.status_code == 200
