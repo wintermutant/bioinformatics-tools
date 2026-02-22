@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from dataclasses import dataclass, field
 
 
@@ -12,8 +11,8 @@ class ApptainerKey:
 
 
 @dataclass
-class WorkflowKey:  #TODO: Rename this
-    '''Information needed to run a workflow and map from cmd line'''
+class WorkflowKey:
+    '''Metadata for a single Snakemake workflow.'''
     cmd_identifier: str
     snakemake_file: str
     other: list[str]

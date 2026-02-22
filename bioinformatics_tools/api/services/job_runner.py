@@ -4,6 +4,10 @@ Job execution and monitoring.
 Contains the core SSH task runner that streams remote output, parses logs
 for SLURM job IDs, Snakemake progress, and container metadata, and the
 SLURM status checker daemon thread.
+
+The `connection` parameter threads a per-user SSHConnection through from the
+API router all the way to the SLURM status checker daemon, so every SSH call
+hits the correct cluster and account.
 """
 import asyncio
 import json
@@ -14,6 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from bioinformatics_tools.utilities import ssh_slurm
+from bioinformatics_tools.utilities.ssh_connection import SSHConnection, default_connection
 from bioinformatics_tools.api.services.job_store import job_store
 
 LOGGER = logging.getLogger(__name__)
@@ -28,14 +33,14 @@ STEPS_PROGRESS_RE = re.compile(r'(\d+) of (\d+) steps \((\d+)%\) done')
 CACHE_HIT_RE = re.compile(r'Cache HIT for (\w+)')
 
 
-def _slurm_status_checker(job_id: str):
+def _slurm_status_checker(job_id: str, connection: SSHConnection):
     """Daemon thread that periodically checks SLURM job statuses."""
     while job_store.get_status(job_id) == "running":
         slurm_jobs = job_store.get_slurm_jobs(job_id)
         active_ids = [sj["job_id"] for sj in slurm_jobs if sj["status"] not in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "CACHED")]
         if active_ids:
             try:
-                statuses = ssh_slurm.check_multiple_slurm_jobs(active_ids)
+                statuses = ssh_slurm.check_multiple_slurm_jobs(active_ids, connection=connection)
                 for sj in slurm_jobs:
                     if sj["job_id"] in statuses:
                         sj["status"] = statuses[sj["job_id"]]["state"]
@@ -49,16 +54,20 @@ def _slurm_status_checker(job_id: str):
             time.sleep(1)
 
 
-def run_ssh_task(job_id: str, command: str):
+def run_ssh_task(job_id: str, command: str, connection: SSHConnection = default_connection):
     """Generic SSH task runner with log parsing, SLURM tracking, and progress parsing."""
-    job_store.update(job_id, status="running", phase="Submitting to Negishi (SSH)", logs="")
+    job_store.update(job_id, status="running", phase="Submitting via SSH", logs="")
 
-    # Start SLURM status checker daemon thread
-    checker = threading.Thread(target=_slurm_status_checker, args=(job_id,), daemon=True)
+    # Start SLURM status checker daemon thread (passes the same connection through)
+    checker = threading.Thread(
+        target=_slurm_status_checker,
+        args=(job_id, connection),
+        daemon=True
+    )
     checker.start()
 
     try:
-        for line in ssh_slurm.submit_ssh_job(cmd=command):
+        for line in ssh_slurm.submit_ssh_job(cmd=command, connection=connection):
             # Detect work_dir metadata from submit_ssh_job
             if line.startswith("__WORKDIR__:"):
                 job_store.update(job_id, work_dir=line.split(":", 1)[1])
@@ -110,9 +119,9 @@ def run_ssh_task(job_id: str, command: str):
         job_store.append_log(job_id, f"\nError: {str(e)}")
 
 
-def submit_job(job_id: str, command: str):
+def submit_job(job_id: str, command: str, connection: SSHConnection = default_connection):
     """Submit a job to the thread pool executor."""
-    executor.submit(run_ssh_task, job_id, command)
+    executor.submit(run_ssh_task, job_id, command, connection)
 
 
 async def job_status_generator(job_id: str):

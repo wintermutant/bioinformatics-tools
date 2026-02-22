@@ -3,18 +3,25 @@ SSH-based SLURM operations for interfacing with HPC clusters.
 
 Uses paramiko to run login node and SLURM commands. Since we use Snakemake,
 which controls SLURM batching and queueing, we can mainly run on login node.
+
+All functions accept an optional `connection` parameter. When called from
+the API layer, pass a per-user SSHConnection built with make_user_connection().
+When called from the CLI (or legacy code), the default_connection singleton
+is used unchanged.
 '''
-from datetime import datetime
 import logging
 
-from bioinformatics_tools.utilities.ssh_connection import default_connection
+from bioinformatics_tools.utilities.ssh_connection import SSHConnection, default_connection
 
 LOGGER = logging.getLogger(__name__)
 
 
-def get_genomes(location):
+def get_genomes(
+    location,
+    connection: SSHConnection = default_connection,
+):
     """List genome files at a remote path via SSH ls."""
-    ssh = default_connection.connect()
+    ssh = connection.connect()
     LOGGER.info('ls -lah %s', location)
     stdin, stdout, stderr = ssh.exec_command(f'ls -lah {location}')
     output = stdout.read().decode()
@@ -28,21 +35,17 @@ def get_genomes(location):
     return files
 
 
-def submit_ssh_job(cmd):
+def submit_ssh_job(
+    cmd,
+    connection: SSHConnection = default_connection,
+):
     '''Generator that streams remote output line-by-line via SSH.
     Yields a __WORKDIR__: metadata line first, then each output line as it arrives.
     '''
-    ssh = default_connection.connect()
+    ssh = connection.connect()
     LOGGER.info('Connected!')
 
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
-    work_dir = f'/depot/lindems/data/margie/tests/{timestamp}'
-    LOGGER.info('Running in working directory: %s', work_dir)
-
-    # Yield the working directory as metadata for the caller
-    yield f'__WORKDIR__:{work_dir}'
-
-    wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && mkdir -p {work_dir} && cd {work_dir} && {cmd} 2>&1'  #TODO: I really don't like this, but points to uv/uvx
+    wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && {cmd} 2>&1'  #TODO: I really don't like this, but points to uv/uvx
 
     # ---------------------- Meat and potatoes of execution ---------------------- #
     stdin, stdout, stderr = ssh.exec_command(wrapped_cmd, get_pty=True)
@@ -55,9 +58,16 @@ def submit_ssh_job(cmd):
     ssh.close()
 
 
-def submit_slurm_job(script_content, nodes=1, cpus=4, mem='4G', time='00:30:00'):
+def submit_slurm_job(
+    script_content,
+    nodes=1,
+    cpus=4,
+    mem='4G',
+    time='00:30:00',
+    connection: SSHConnection = default_connection,
+):
     """Write a SLURM batch script and submit it via sbatch."""
-    ssh = default_connection.connect()
+    ssh = connection.connect()
 
     stdin, stdout, stderr = ssh.exec_command('touch im-here.flag')
 
@@ -98,12 +108,15 @@ source /etc/profile
     return job_id
 
 
-def check_slurm_job_status(job_id):
+def check_slurm_job_status(
+    job_id,
+    connection: SSHConnection = default_connection,
+):
     """Check the status of a single SLURM job via squeue then sacct.
 
     Returns: dict with status info (state, elapsed_time, etc.)
     """
-    ssh = default_connection.connect()
+    ssh = connection.connect()
 
     # Use squeue to check if job is running/pending
     stdin, stdout, stderr = ssh.exec_command(f'squeue -j {job_id} --format="%T %M %j %a %l" --noheader')
@@ -135,7 +148,10 @@ def check_slurm_job_status(job_id):
     return {"state": "NOT_FOUND", "elapsed_time": "0:00", "exists": False}
 
 
-def check_multiple_slurm_jobs(job_ids: list[str]) -> dict[str, dict]:
+def check_multiple_slurm_jobs(
+    job_ids: list[str],
+    connection: SSHConnection = default_connection,
+) -> dict[str, dict]:
     """Check status of multiple SLURM jobs in a single SSH call.
 
     Returns a dict mapping each job_id to {"state": ..., "time": ...}.
@@ -143,7 +159,7 @@ def check_multiple_slurm_jobs(job_ids: list[str]) -> dict[str, dict]:
     if not job_ids:
         return {}
 
-    ssh = default_connection.connect()
+    ssh = connection.connect()
 
     results = {}
     ids_str = ",".join(job_ids)
