@@ -10,6 +10,7 @@ SSHConnection for each request.
 """
 import logging
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -25,6 +26,12 @@ LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/ssh", tags=["ssh"])
 
+# User-facing workflows available from the analyze page.
+# Add new entries here as workflows are added to workflow_keys in workflow.py.
+AVAILABLE_WORKFLOWS: list[dict] = [
+    {"id": "margie", "label": "Margie", "description": "Full annotation pipeline (Prodigal, Pfam, COG)"},
+]
+
 
 def _build_connection(current_user: dict):
     """Decrypt the user's stored private key and return a ready SSHConnection."""
@@ -39,6 +46,12 @@ def _build_connection(current_user: dict):
 def _config_path(home_dir: str) -> str:
     """Remote path to the user's BSP config file."""
     return f'{home_dir}/.config/bioinformatics-tools/config.yaml'
+
+
+@router.get("/workflows")
+async def list_workflows(current_user: dict = Depends(get_current_user)):
+    """Return the list of user-facing workflows available on the analyze page."""
+    return AVAILABLE_WORKFLOWS
 
 
 @router.get("/health")
@@ -103,17 +116,29 @@ async def run_ssh(content: SlurmSend, current_user: dict = Depends(get_current_u
     return {"success": True, "std_txt": std_txt, "message": "Job submitted successfully"}
 
 
-@router.post("/run_margie")
-async def run_margie(genome_data: GenomeSend, current_user: dict = Depends(get_current_user)):
-    """Takes in a genome path (on the user's cluster) and runs the margie pipeline."""
+@router.post("/run_workflow")
+async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get_current_user)):
+    """Submit a genome analysis workflow by name. Workflow must be in AVAILABLE_WORKFLOWS."""
+    allowed_ids = {wf["id"] for wf in AVAILABLE_WORKFLOWS}
+    if genome_data.workflow not in allowed_ids:
+        raise HTTPException(status_code=400, detail=f"Unknown workflow '{genome_data.workflow}'. Available: {sorted(allowed_ids)}")
+
     conn = _build_connection(current_user)
     job_id = str(uuid.uuid4())
-    job_store.create(job_id, genome_data.genome_path, user_id=current_user["user_id"])
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
+    base_dir = (genome_data.output_dir or current_user['home_dir']).rstrip('/')
+    output_dir = f"{base_dir}/{timestamp}"
 
-    command = f"uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf margie input: {genome_data.genome_path}"
+    job_store.create(job_id, genome_data.genome_path, user_id=current_user["user_id"])
+    job_store.update(job_id, work_dir=output_dir)
+
+    command = (
+        f"uvx --from ~/bioinformatics-tools/ --force-reinstall"
+        f" dane_wf {genome_data.workflow} input: {genome_data.genome_path} output_dir: {output_dir}"
+    )
     job_runner.submit_job(job_id, command, connection=conn)
 
-    return {"success": True, "job_id": job_id, "message": "Job submitted successfully"}
+    return {"success": True, "job_id": job_id, "output_dir": output_dir, "message": "Job submitted successfully"}
 
 
 @router.get("/job_status/{job_id}")
@@ -152,6 +177,7 @@ async def get_job_files(
 
     try:
         entries = ssh_sftp.list_remote_dir(target_dir, connection=conn)
+        entries = [e for e in entries if not e['name'].startswith('.')]
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Directory not found on remote")
     except Exception as e:

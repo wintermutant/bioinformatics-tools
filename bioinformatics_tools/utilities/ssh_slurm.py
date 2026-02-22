@@ -9,7 +9,6 @@ the API layer, pass a per-user SSHConnection built with make_user_connection().
 When called from the CLI (or legacy code), the default_connection singleton
 is used unchanged.
 '''
-from datetime import datetime
 import logging
 
 from bioinformatics_tools.utilities.ssh_connection import SSHConnection, default_connection
@@ -46,14 +45,7 @@ def submit_ssh_job(
     ssh = connection.connect()
     LOGGER.info('Connected!')
 
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
-    work_dir = f'/depot/lindems/data/margie/tests/{timestamp}'
-    LOGGER.info('Running in working directory: %s', work_dir)
-
-    # Yield the working directory as metadata for the caller
-    yield f'__WORKDIR__:{work_dir}'
-
-    wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && mkdir -p {work_dir} && cd {work_dir} && {cmd} 2>&1'  #TODO: I really don't like this, but points to uv/uvx
+    wrapped_cmd = f'export PATH=$HOME/.local/bin:$PATH && {cmd} 2>&1'  #TODO: I really don't like this, but points to uv/uvx
 
     # ---------------------- Meat and potatoes of execution ---------------------- #
     stdin, stdout, stderr = ssh.exec_command(wrapped_cmd, get_pty=True)

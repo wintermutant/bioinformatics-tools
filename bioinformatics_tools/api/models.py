@@ -25,6 +25,8 @@ class SlurmSend(BaseModel):
 
 class GenomeSend(BaseModel):
     genome_path: str
+    output_dir: str | None = None  # base path; timestamp appended server-side
+    workflow: str = 'margie'
 
 
 # --- Auth models -------------------------------------------------------------
