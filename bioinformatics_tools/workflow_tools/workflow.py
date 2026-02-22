@@ -53,7 +53,7 @@ workflow_keys: dict[str, WorkflowKey] = {
 class WorkflowBase(ProgramBase):
     '''Snakemake workflow execution. Inherits single-program commands from ProgramBase.
     '''
-    
+
     def __init__(self, workflow_id=None):
         LOGGER.debug('Starting __init__ of WorkflowBase')
         self.workflow_id = workflow_id
@@ -62,7 +62,7 @@ class WorkflowBase(ProgramBase):
         LOGGER.debug('Using the workflow id of %s', self.workflow_id)
 
         super().__init__()
-    
+
     def build_executable(self, key: WorkflowKey, config_dict: dict = None, mode='notdev') -> list[str]:
         '''Given a workflow data object, with access to config and command line args,
         build out a snakemake command'''
@@ -99,7 +99,7 @@ class WorkflowBase(ProgramBase):
             core_command.extend(config_pairs)
 
         return core_command
-    
+
     @staticmethod
     def _parse_snakemake_output(stderr: str) -> dict:
         '''Best-effort parse of snakemake stderr for structured reporting.'''
@@ -126,8 +126,17 @@ class WorkflowBase(ProgramBase):
         '''Wrapper for subprocess.run(). Returns CompletedProcess on any exit
         code (even non-zero), or None on launch failure (e.g. snakemake not installed).'''
         LOGGER.debug('Received command and running: %s', wf_command)
+
+        # Pin snakemake's working directory to output_dir so that .snakemake/
+        # and any relative rule paths resolve there, regardless of the SSH
+        # session's CWD on the cluster.
+        output_dir = self.conf.get('output_dir', '')
+        cwd = output_dir or None
+        if cwd:
+            Path(cwd).mkdir(parents=True, exist_ok=True)
+
         try:
-            result = subprocess.run(wf_command, capture_output=True, text=True)
+            result = subprocess.run(wf_command, capture_output=True, text=True, cwd=cwd)
             LOGGER.info('snakemake stdout:\n%s', result.stdout)
             if result.stderr:
                 LOGGER.info('snakemake stderr:\n%s', result.stderr)
@@ -147,6 +156,19 @@ class WorkflowBase(ProgramBase):
             'stdout_tail': proc.stdout[-2000:] if proc.stdout else '',
             'stderr_tail': proc.stderr[-2000:] if proc.stderr else '',
         }
+
+    def _output_prefix(self) -> str:
+        """Return the filesystem prefix to prepend to all output paths for this run.
+
+        Reads ``output_dir`` from the caragols config (set via CLI arg or passed
+        from the API). If present, returns ``'{output_dir}/'``; otherwise returns
+        ``''`` so that output paths remain relative to the SSH working directory.
+
+        Every ``do_*`` workflow method should call this instead of reading
+        ``output_dir`` directly, so the logic stays in one place.
+        """
+        output_dir = self.conf.get('output_dir', '')
+        return f"{output_dir.rstrip('/')}/" if output_dir else ''
 
     def _run_pipeline(self, key_name: str, smk_config: dict, cache_map: dict = None, mode='dev'):
         '''Shared pipeline execution: cache containers, restore outputs, run snakemake, store outputs.'''
@@ -307,15 +329,19 @@ class WorkflowBase(ProgramBase):
         prodigal_config = self.conf.get('prodigal')
         margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
 
+        prefix = self._output_prefix()
+
         # Output paths
-        out_prodigal = f"prodigal/{stem}-prodigal.tkn"
-        out_prodigal_faa = f"prodigal/{stem}-prodigal.faa"
-        out_prodigal_db = f"prodigal/{stem}-prodigal_db.tkn"
-        out_pfam = f"pfam/{stem}-pfam.tkn"
-        out_pfam_db = f"pfam/{stem}-pfam_db.tkn"
-        out_cog_classify = "cog/cog_classify.tsv"
-        out_cog_count = "cog/cog_count.tsv"
-        out_cog_db = f"cog/{stem}-cog_db.tkn"
+        out_prodigal = f"{prefix}prodigal/{stem}-prodigal.tkn"
+        out_prodigal_faa = f"{prefix}prodigal/{stem}-prodigal.faa"
+        out_prodigal_db = f"{prefix}prodigal/{stem}-prodigal_db.tkn"
+        out_pfam = f"{prefix}pfam/{stem}-pfam.tkn"
+        out_pfam_db = f"{prefix}pfam/{stem}-pfam_db.tkn"
+        out_cog = f"{prefix}cog/{stem}-cog.tkn"
+        out_cog_classify = f"{prefix}cog/cog_classify.tsv"
+        out_cog_count = f"{prefix}cog/cog_count.tsv"
+        out_cog_db = f"{prefix}cog/{stem}-cog_db.tkn"
+        cog_outdir = f"{prefix}cog"
 
         smk_config = {
             'input_fasta': input_file,
@@ -324,9 +350,11 @@ class WorkflowBase(ProgramBase):
             'out_prodigal_db': out_prodigal_db,
             'out_pfam': out_pfam,
             'out_pfam_db': out_pfam_db,
+            'out_cog': out_cog,
             'out_cog_classify': out_cog_classify,
             'out_cog_count': out_cog_count,
             'out_cog_db': out_cog_db,
+            'cog_outdir': cog_outdir,
             'out_dbcan': f"{stem}-dbcan.tkn",
             'out_kofam': f"{stem}-kofam.tkn",
             'prodigal_threads': prodigal_config.get('threads'),
@@ -338,7 +366,7 @@ class WorkflowBase(ProgramBase):
             'prodigal_db': [out_prodigal_db],
             'pfam': [out_pfam],
             'pfam_db': [out_pfam_db],
-            'cog': [out_cog_classify, out_cog_count],
+            'cog': [out_cog, out_cog_classify, out_cog_count],
             'cog_db': [out_cog_db],
         }
 
