@@ -30,7 +30,11 @@ router = APIRouter(prefix="/v1/ssh", tags=["ssh"])
 # Add new entries here as workflows are added to workflow_keys in workflow.py.
 AVAILABLE_WORKFLOWS: list[dict] = [
     {"id": "margie", "label": "Margie", "description": "Full annotation pipeline (Prodigal, Pfam, COG)"},
+    {"id": "custom_microbiome", "label": "CustomMicrobiome", "description": "Custom microbiome annotation workflow (coming soon)"},
 ]
+
+# Workflows visible on the frontend but not yet implemented.
+STUB_WORKFLOWS: set[str] = {"custom_microbiome"}
 
 
 def _build_connection(current_user: dict):
@@ -123,6 +127,9 @@ async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get
     if genome_data.workflow not in allowed_ids:
         raise HTTPException(status_code=400, detail=f"Unknown workflow '{genome_data.workflow}'. Available: {sorted(allowed_ids)}")
 
+    if genome_data.workflow in STUB_WORKFLOWS:
+        raise HTTPException(status_code=501, detail=f"Workflow '{genome_data.workflow}' is not yet implemented. Check back soon!")
+
     conn = _build_connection(current_user)
     job_id = str(uuid.uuid4())
     timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
@@ -149,7 +156,7 @@ async def get_job_status(job_id: str, current_user: dict = Depends(get_current_u
         raise HTTPException(status_code=404, detail="Job not found")
     if job.get("user_id") != current_user["user_id"]:
         raise HTTPException(status_code=403, detail="Access denied")
-    return job
+    return {**job, "cluster_host": current_user["cluster_host"]}
 
 
 @router.get("/job_files/{job_id}")
