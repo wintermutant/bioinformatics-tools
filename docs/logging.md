@@ -1,20 +1,17 @@
-Logging
-=======================================
+# Logging
 
 Logging and debugging information for Bioinformatics Tools.
 
-Overview
------------
+## Overview
 
 The package uses Python's built-in logging module to provide detailed information about operations and errors.
 We collect extra log information and place it in the following location:
 
-.. code-block:: bash
+```bash
+~/.caragols/logs/<username>
+```
 
-   ~/.caragols/logs/<username>
-
-Log Levels
-----------
+## Log Levels
 
 - **DEBUG**: Detailed diagnostic information
 - **INFO**: General informational messages
@@ -22,13 +19,11 @@ Log Levels
 - **ERROR**: Error messages for serious problems
 - **CRITICAL**: Critical errors that may cause the program to fail
 
-Configuration
--------------
+## Configuration
 
-Command Line
-^^^^^^^^^^^^
+### Command Line
 
-.. code-block:: bash
-
-   # Example setting log levels in the future when it is implemented
-   bioinformatics-tools --log-level DEBUG command  # Not yet implemented
+```bash
+# Example setting log levels in the future when it is implemented
+bioinformatics-tools --log-level DEBUG command  # Not yet implemented
+```

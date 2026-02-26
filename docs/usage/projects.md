@@ -1,15 +1,11 @@
-Projects
-=======================================
+# Projects
 
 **Not currently implemented yet. Check back soon**
 
 Project management and organization tools.
 
-Theory
--------
+## Theory
 
-Usage
---------
+## Usage
 
-Examples
----------
+## Examples

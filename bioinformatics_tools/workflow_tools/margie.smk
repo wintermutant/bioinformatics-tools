@@ -26,7 +26,8 @@ rule run_prodigal:
     group: "prodigal"
     threads: config.get('prodigal_threads', 1)
     resources:
-        mem_mb=2048
+        mem_mb=2048,
+        runtime=30
         # mem_mb=lambda wc, input: max(2.5 * input.size_mb, 300)
     container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
     shell:
@@ -59,6 +60,9 @@ rule run_pfam:
     group: "pfam"
     container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
     threads: 4
+    resources:
+        mem_mb=4000,
+        runtime=240
     params:
         db=config.get("pfam_db", "/depot/lindems/data/Databases/pfam")
     shell:
@@ -97,7 +101,8 @@ rule run_cog:
         db=config.get('cog_db', '/depot/lindems/data/Databases/cog/')
     threads: config.get('cog_threads', 4)
     resources:
-        mem_mb=8192
+        mem_mb=8192,
+        runtime=120
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
     shell:
         """

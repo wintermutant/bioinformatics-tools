@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from bioinformatics_tools.utilities import ssh_slurm
-from bioinformatics_tools.utilities.ssh_connection import SSHConnection, default_connection
+from bioinformatics_tools.utilities.ssh_connection import SSHConnection
 from bioinformatics_tools.api.services.job_store import job_store
 
 LOGGER = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _slurm_status_checker(job_id: str, connection: SSHConnection):
             time.sleep(1)
 
 
-def run_ssh_task(job_id: str, command: str, connection: SSHConnection = default_connection):
+def run_ssh_task(job_id: str, command: str, connection: SSHConnection):
     """Generic SSH task runner with log parsing, SLURM tracking, and progress parsing."""
     job_store.update(job_id, status="running", phase="Submitting via SSH", logs="")
 
@@ -119,7 +119,7 @@ def run_ssh_task(job_id: str, command: str, connection: SSHConnection = default_
         job_store.append_log(job_id, f"\nError: {str(e)}")
 
 
-def submit_job(job_id: str, command: str, connection: SSHConnection = default_connection):
+def submit_job(job_id: str, command: str, connection: SSHConnection):
     """Submit a job to the thread pool executor."""
     executor.submit(run_ssh_task, job_id, command, connection)
 
