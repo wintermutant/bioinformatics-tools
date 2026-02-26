@@ -4,21 +4,19 @@ SSH-based SLURM operations for interfacing with HPC clusters.
 Uses paramiko to run login node and SLURM commands. Since we use Snakemake,
 which controls SLURM batching and queueing, we can mainly run on login node.
 
-All functions accept an optional `connection` parameter. When called from
-the API layer, pass a per-user SSHConnection built with make_user_connection().
-When called from the CLI (or legacy code), the default_connection singleton
-is used unchanged.
+All functions are API-layer only. Pass a per-user SSHConnection built
+with make_user_connection() for every call.
 '''
 import logging
 
-from bioinformatics_tools.utilities.ssh_connection import SSHConnection, default_connection
+from bioinformatics_tools.utilities.ssh_connection import SSHConnection
 
 LOGGER = logging.getLogger(__name__)
 
 
 def get_genomes(
     location,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ):
     """List genome files at a remote path via SSH ls."""
     ssh = connection.connect()
@@ -37,7 +35,7 @@ def get_genomes(
 
 def submit_ssh_job(
     cmd,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ):
     '''Generator that streams remote output line-by-line via SSH.
     Yields a __WORKDIR__: metadata line first, then each output line as it arrives.
@@ -60,11 +58,11 @@ def submit_ssh_job(
 
 def submit_slurm_job(
     script_content,
+    connection: SSHConnection,
     nodes=1,
     cpus=4,
     mem='4G',
     time='00:30:00',
-    connection: SSHConnection = default_connection,
 ):
     """Write a SLURM batch script and submit it via sbatch."""
     ssh = connection.connect()
@@ -110,7 +108,7 @@ source /etc/profile
 
 def check_slurm_job_status(
     job_id,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ):
     """Check the status of a single SLURM job via squeue then sacct.
 
@@ -150,7 +148,7 @@ def check_slurm_job_status(
 
 def check_multiple_slurm_jobs(
     job_ids: list[str],
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ) -> dict[str, dict]:
     """Check status of multiple SLURM jobs in a single SSH call.
 
