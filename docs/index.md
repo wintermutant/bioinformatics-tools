@@ -1,12 +1,6 @@
-.. Bioinformatics Tools documentation master file, created by
-   sphinx-quickstart on Mon Oct 27 12:47:18 2025.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+# Bioinformatics Tools Documentation
 
-Bioinformatics Tools Documentation!
-=======================================
-
-:doc:`Skip to quickstart <tutorial/start>`
+[Skip to quickstart](tutorial/start.md)
 
 **Purpose**: make everyday bioinformatics easier by supercharging the tools
 available for researchers to use on the command line.
@@ -28,16 +22,4 @@ aspects:
 3. Reducing file count and need for file organization by using 1 transferrable database per file/sample
 4. Comprehensive log messages for easier troubleshooting
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Chapters:
-
-   tutorial/index
-   usage/index
-   configuration
-   logging
-   extensions
-   contribution
-   contact
-
-If you want to contact me, you can so by :doc:`clicking here <contact>`
+If you want to contact me, you can do so by [clicking here](contact.md).

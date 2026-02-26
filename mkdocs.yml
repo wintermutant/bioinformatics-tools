@@ -1,0 +1,40 @@
+site_name: Bioinformatics Tools
+site_author: Dane Deemer
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - attr_list
+
+exclude_docs: |
+  task-runner-sftp-changes.md
+
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Overview: tutorial/index.md
+      - Getting Started: tutorial/start.md
+  - Usage:
+      - Overview: usage/index.md
+      - IO: usage/io.md
+      - Database: usage/database.md
+      - Workflow: usage/workflow.md
+      - Projects: usage/projects.md
+  - Configuration: configuration.md
+  - Logging: logging.md
+  - Extensions: extensions.md
+  - Contribution: contribution.md
+  - Contact: contact.md
