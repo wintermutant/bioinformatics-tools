@@ -1,9 +1,8 @@
-# Bioinformatics Tools Documentation
+# Bioinformatics Supercomputing Platform
 
-[Skip to quickstart](tutorial/start.md)
+[Skip to quickstart](quick-start.md)
 
-**Purpose**: make everyday bioinformatics easier by supercharging the tools
-available for researchers to use on the command line.
+**Purpose**: Remove the minutiae in running prorgams complex workflows on high-performance computers. 
 
 This is a general command-line tool that has a diverse set of functionality all aiming
 to make bioinformatics easier and better. We accomplish this by creating small programs
