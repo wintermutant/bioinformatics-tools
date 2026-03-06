@@ -8,7 +8,7 @@ bioinformatics and command line skills to accomplish new research tasks.
 
 ## What can you do with a bioinformatics file?
 
-As far as this package is concerned, there are 2 types of file:
+As far as this package is concerned, there are 2 types of files:
 
 1. Files we recognize
 2. Files we don't recognize
@@ -80,6 +80,9 @@ class_skeleton
 Fasta
 GeneralFeatureFormat
 ```
+
+!!! warning "Supported File Types"
+    For our first release, we are only supporting FASTA files. As we start steady releases, we will incorporate a backlog of file formats we internally support but have yet to release publicly.
 
 As we update the package we will be adding more and more supported filetypes. For each filetype, you can
 validate any file via:

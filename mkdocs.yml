@@ -28,7 +28,7 @@ nav:
       - Programs: user-guide/programs.md
       - Workflows: user-guide/workflows.md
       - Databases: user-guide/databases.md
-      - Projects: user-guide/projects.md
+      - GUI: user-guide/gui.md
   - Configuration: configuration.md
   - Logging: logging.md
   - Extensions: extensions.md
