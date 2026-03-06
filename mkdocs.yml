@@ -1,4 +1,4 @@
-site_name: Bioinformatics Tools
+site_name: Bioinformatics Supercomputing Platform
 site_author: Dane Deemer
 docs_dir: docs
 
@@ -23,18 +23,13 @@ exclude_docs: |
   task-runner-sftp-changes.md
 
 nav:
-  - Home: index.md
-  - Tutorial:
-      - Overview: tutorial/index.md
-      - Getting Started: tutorial/start.md
-  - Usage:
-      - Overview: usage/index.md
-      - IO: usage/io.md
-      - Database: usage/database.md
-      - Workflow: usage/workflow.md
-      - Projects: usage/projects.md
+  - Getting Started: quick-start.md
+  - User Guide:
+      - Programs: user-guide/programs.md
+      - Workflows: user-guide/workflows.md
+      - Databases: user-guide/databases.md
+      - GUI: user-guide/gui.md
   - Configuration: configuration.md
   - Logging: logging.md
   - Extensions: extensions.md
-  - Contribution: contribution.md
-  - Contact: contact.md
+  - Help: help.md
