@@ -1,46 +1,39 @@
-# General Tools (for Bioinformatics)
+# Bioinformatics and HPC Toolkit
 [![Documentation Status](https://readthedocs.org/projects/bioinformatics-tools/badge/?version=latest)](https://bioinformatics-tools.readthedocs.io/en/latest/?badge=latest)
 
-Comprehensive toolkit for bioinformatics workflows.
+Comprehensive toolkit for bioinformatics and general high-performance computing (HPC) workflows.
 
-### A Diet-Microbiome Interactions Lab-Supported Resource out of Purdue University
+## Note to users
 
 Here we present simple tools for common bioinformatic use-cases, as well as other convenient functionality for your everyday command-line hacker. The main functionality takes in a file and a specified type, and will validate the file plus perform any simple stats, permutations, or filters. We were tired of getting errors when shoving data that wasn't first validated into pipelines, as well as performing the same bash and python hacks to look a little deeper at our large files. Further, we wanted a way to extend file validation and hacks to custom file types in our lab. Lastly, we wanted a more robust way to configure settings and record our behavior so we could be more reproducible without expending any extra effort.
 
-- [General Tools (for Bioinformatics)](#general-tools-for-bioinformatics)
-    - [A Diet-Microbiome Interactions Lab-Supported Resource out of Purdue University](#a-diet-microbiome-interactions-lab-supported-resource-out-of-purdue-university)
-  - [Setup \& Installation](#setup--installation)
-    - [i) Setup (Start Here!)](#i-setup-start-here)
-    - [ii) Installation](#ii-installation)
-  - [How to use this library](#how-to-use-this-library)
-    - [i) Getting help](#i-getting-help)
-    - [ii) Command LIne Extension (CLIX)](#ii-command-line-extension-clix)
-    - [iii) Configuration Settings](#iii-configuration-settings)
-      - [Advanced Users](#advanced-users)
-    - [iv) Logging](#iv-logging)
-  - [EXTRAs: Some philosophical rants](#extras-some-philosophical-rants)
-    - [Let's talk about file validation](#lets-talk-about-file-validation)
-  - [Releases](#releases)
-  - [TODO](#todo)
-  - [Contributor Guide](#contributor-guide)
-
-
 ## Setup & Installation
 
-### i) Setup (Start Here!)
+### i) Setup (Start Here)
 
-This is a Python package, requiring the version of Python to be 3.6 or later (a higher number than 3.6). From your Terminal (mac) or terminal-emulator in Windows (putty, powershell, etc.), which we will refer to as your _terminal_, check if you have Python3 installed.  
-`python --version`  
-or  
-`python3 --version`  
-One of those commands should show "Python 3.6" or newer if you have python3 installed correctly. For the remaining steps, use the command (`python or python3`) that worked.
+This is a Python package, requiring the version of Python to be 3.6 or later. We recommend uv as the virtual environment, but use whatever you want.
 
 ### ii) Installation
 
-Installation should be pretty quick using the package manager _pip_. We recommend first creating and entering a virtual environment before installing our package, but this is not necessary. Perform the following command to install the package:  
-`pip install bioinformatics_tools`
+**cli:**
 
-## How to use this library
+Simply run `pip install bioinformatics-tools`, or if you clone this repo just type `pip install -e .` while in the root directory.
+
+**backend:**
+
+1. `uv install bioinformatics_tools`
+2. `uv sync`
+3. `source .venv/bin/activate`
+4. `dane-api`  # this starts the fastapi server, which is required only if using the frontend
+
+**frontend:**
+
+1. `git clone git@github.com:wintermutant/biolab-fe.git`
+2. `cd margie-fe/margie-fe`
+3. `npm install`
+4. `npm run dev`
+
+## How to use the CLI
 
 ### i) Getting help
 
@@ -168,7 +161,7 @@ There's a folder called FileTypes, which contains Python classes that validate a
 
 -   Validate the file by scrubbing the entirety of the content
     -   `$ dane valid type: fasta file: example.py` # Return True or False
-    -   Coming Soon: Strict vs. Lenient file validation levels
+    -   Idea for later: Strict vs. Lenient file validation levels
 -   A standardized **Preferred Filename**, which removes ambiguity in file naming and extension.
     -   For example, .fna, .fasta, .fa, .fasta.gz, etc., will be coerced to _'.fasta.gz'_. This allows us to control not only the validation but also the naming of the file, which is helpful when we release automated analyses connected via **SnakeMake** (TBD...\*\*)
 -   Rewrite a scrubbed, standardized (filename) file that adhered to the preferred filename attribute.
@@ -177,43 +170,7 @@ There's a folder called FileTypes, which contains Python classes that validate a
     -   This is the meat and potatoes (as we say in the midwest US) of the general toolset, allowing us to quickly and easily extend the things we can do with a particular file.
 -   Subsetting functionality, or rewriting a new file based on a filtering condition. For example, you may want to write the 10 largest sequences, or sequences > 2000 basepairs to a new file in a fasta.
 
-## Releases
-
-This project adheres to [semantic versioning](https://semver.org/), and we are in our 0.y.z phase, so this project is not signifying initial development. These releases are not considered stable, and their APIs can change frequently and without warning.
-
-## TODO
-
-- [ ] Allow strict vs. lenient validation of files
-- [ ] Add levels for self.validate (hard, soft, ad-hoc, etc.)
-- [ ] Incorporate files interacting with other files
-- [ ] Incorporate workflows
-- [ ] Suffix error when you have file: example.
-- [ ] dane type: generate requires a file: but it doesn't acknowledge it when it write it
-- [ ] it's also kind of silly to do $ dane create slurm type: gen --> eventually should have some other magic logic
-- [ ] BAM
-  - [ ] imports
-  - [ ] __init__
-  - [ ] validate
-  - [ ] @commands
-- [ ] BED
-  - [ ] imports
-  - [ ] __init__
-  - [ ] validate
-  - [ ] @commands
-- [ ] GFF
-  - [ ] imports
-  - [ ] __init__
-  - [ ] validate
-  - [ ] @commands
-- [ ] GTF
-  - [ ] imports
-  - [ ] __init__
-  - [ ] validate
-  - [ ] @commands
-
 ## Contributor Guide
 
-Dane Deemer: Senior Computational Biologist (Purdue University)
-Nathan Denny: Lead Research Analyst (Purdue University)
-Stephen Lindemann: Associate Professor (Purdue University)
-Maverick Cook: Senior Software Engineer
+Dane Deemer: Bioinformatician and Software Engineer
+Maverick Cook: Software Engineer
