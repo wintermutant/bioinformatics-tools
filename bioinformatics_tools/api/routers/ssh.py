@@ -131,6 +131,28 @@ async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get
         raise HTTPException(status_code=501, detail=f"Workflow '{genome_data.workflow}' is not yet implemented. Check back soon!")
 
     conn = _build_connection(current_user)
+
+    # Pre-flight: verify the genome file exists on the cluster before creating a job.
+    try:
+        ssh_sftp.check_remote_file(genome_data.genome_path, conn)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Genome file not found on the cluster: '{genome_data.genome_path}'. "
+                   "Make sure the path is a Negishi path, not a path on your local machine.",
+        )
+    except IsADirectoryError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path points to a directory, not a file: '{genome_data.genome_path}'",
+        )
+    except Exception as exc:
+        LOGGER.warning("File pre-check failed for %s: %s", genome_data.genome_path, exc)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not verify genome file on cluster: {exc}",
+        )
+
     job_id = str(uuid.uuid4())
     timestamp = datetime.now().strftime('%Y-%m-%d-%H%M')
     base_dir = (genome_data.output_dir or current_user['home_dir']).rstrip('/')
@@ -184,7 +206,6 @@ async def get_job_files(
 
     try:
         entries = ssh_sftp.list_remote_dir(target_dir, connection=conn)
-        entries = [e for e in entries if not e['name'].startswith('.')]
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Directory not found on remote")
     except Exception as e:

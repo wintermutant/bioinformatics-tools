@@ -4,13 +4,14 @@ Centralized SSH connection configuration.
 Provides a single place to manage host, username, and connection setup
 instead of hardcoding paramiko boilerplate in every function.
 
-CLI usage:
-    default_connection uses system SSH agent/keys — unchanged behaviour.
+All SSH/SFTP operations are API-layer only. The CLI runs directly on the
+cluster and has no need to establish outbound SSH connections.
 
 API usage:
-    Call make_user_connection(host, username, private_key_str) which loads
-    the user's decrypted private key into memory (never written to disk)
-    and returns an SSHConnection that paramiko can use directly.
+    Call make_user_connection(host, username, private_key_str), which reads
+    the user's cluster credentials from the database record, loads the
+    decrypted private key into memory (never written to disk), and returns
+    a ready SSHConnection.
 """
 import io
 import logging
@@ -45,8 +46,8 @@ class SSHConnection:
 
     def __init__(
         self,
-        host: str = 'negishi.rcac.purdue.edu',
-        username: str = 'ddeemer',
+        host: str | None = None,
+        username: str | None = None,
         pkey: paramiko.PKey | None = None,
         key_filename: str | None = None,
     ):
@@ -57,6 +58,12 @@ class SSHConnection:
 
     def connect(self) -> paramiko.SSHClient:
         """Open and return a new SSH connection."""
+        if not self.host or not self.username:
+            raise ValueError(
+                'SSHConnection requires host and username. '
+                'Use make_user_connection() in API context, or set host/username '
+                'from the user config for CLI usage.'
+            )
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         connect_kwargs: dict = {'username': self.username}
@@ -86,5 +93,3 @@ def make_user_connection(
     return SSHConnection(host=cluster_host, username=cluster_username, pkey=pkey)
 
 
-# Module-level default instance (CLI usage — system SSH agent, unchanged behaviour)
-default_connection = SSHConnection()

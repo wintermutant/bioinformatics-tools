@@ -4,24 +4,22 @@ SFTP file operations over SSH.
 Provides remote directory listing, file streaming, and YAML config
 read/write via paramiko SFTP.
 
-All functions accept an optional `connection` parameter. When called from
-the API layer, pass a per-user SSHConnection built with make_user_connection().
-When called from the CLI (or legacy code), the default_connection singleton
-is used unchanged.
+All functions are API-layer only. Pass a per-user SSHConnection built
+with make_user_connection() for every call.
 """
 import logging
 import stat
 
 import yaml
 
-from bioinformatics_tools.utilities.ssh_connection import SSHConnection, default_connection
+from bioinformatics_tools.utilities.ssh_connection import SSHConnection
 
 LOGGER = logging.getLogger(__name__)
 
 
 def list_remote_dir(
     remote_path: str,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ) -> list[dict]:
     """List files and directories in a remote path via SFTP.
 
@@ -44,7 +42,7 @@ def list_remote_dir(
 
 def stream_remote_file(
     remote_path: str,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ):
     """Generator that streams a remote file in chunks via SFTP.
 
@@ -64,7 +62,7 @@ def stream_remote_file(
 
 def read_remote_yaml(
     remote_path: str,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ) -> dict:
     """Read and parse a YAML file from the remote cluster.
 
@@ -84,10 +82,32 @@ def read_remote_yaml(
         ssh.close()
 
 
+def check_remote_file(
+    path: str,
+    connection: SSHConnection,
+) -> None:
+    """Verify a remote file exists and is a regular file via SFTP.
+
+    Raises FileNotFoundError if the path does not exist on the cluster,
+    or IsADirectoryError if it resolves to a directory rather than a file.
+    """
+    ssh = connection.connect()
+    sftp = ssh.open_sftp()
+    try:
+        attr = sftp.stat(path)
+        if stat.S_ISDIR(attr.st_mode):
+            raise IsADirectoryError(f'Path is a directory, not a file: {path}')
+    except FileNotFoundError:
+        raise FileNotFoundError(f'File not found on cluster: {path}')
+    finally:
+        sftp.close()
+        ssh.close()
+
+
 def write_remote_yaml(
     remote_path: str,
     data: dict,
-    connection: SSHConnection = default_connection,
+    connection: SSHConnection,
 ) -> None:
     """Write a dict as YAML to a remote path via SFTP.
 

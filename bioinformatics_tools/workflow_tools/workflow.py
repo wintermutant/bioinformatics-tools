@@ -6,6 +6,7 @@ import logging
 import re
 import subprocess
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -136,11 +137,38 @@ class WorkflowBase(ProgramBase):
             Path(cwd).mkdir(parents=True, exist_ok=True)
 
         try:
-            result = subprocess.run(wf_command, capture_output=True, text=True, cwd=cwd)
-            LOGGER.info('snakemake stdout:\n%s', result.stdout)
-            if result.stderr:
-                LOGGER.info('snakemake stderr:\n%s', result.stderr)
-            return result
+            proc = subprocess.Popen(
+                wf_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, cwd=cwd,
+            )
+
+            # Collect stderr on a background thread so it doesn't block stdout reads.
+            stderr_lines: list[str] = []
+
+            def _read_stderr():
+                for line in proc.stderr:
+                    line = line.rstrip()
+                    LOGGER.info('[snakemake] %s', line)
+                    stderr_lines.append(line)
+
+            stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+            stderr_thread.start()
+
+            stdout_lines: list[str] = []
+            for line in proc.stdout:
+                line = line.rstrip()
+                LOGGER.info('[snakemake] %s', line)
+                stdout_lines.append(line)
+
+            stderr_thread.join()
+            proc.wait()
+
+            return subprocess.CompletedProcess(
+                args=wf_command,
+                returncode=proc.returncode,
+                stdout='\n'.join(stdout_lines),
+                stderr='\n'.join(stderr_lines),
+            )
         except Exception as e:
             LOGGER.error('Failed to launch subprocess %s: %s', wf_command[0], e)
             self.failed(f'Failed to launch subprocess: {e}')
@@ -317,7 +345,7 @@ class WorkflowBase(ProgramBase):
             self._run_pipeline('selftest', smk_config, cache_map, mode='dev')
 
     @command
-    def do_margie(self, mode='dev'):
+    def do_margie(self, mode='slurm'):
         '''run margie workflow'''
         input_file = self.conf.get('input')
         if not input_file:
