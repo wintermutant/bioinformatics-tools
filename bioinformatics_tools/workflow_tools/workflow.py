@@ -17,104 +17,10 @@ from bioinformatics_tools.workflow_tools.bapptainer import (
 from bioinformatics_tools.workflow_tools.models import WorkflowKey
 from bioinformatics_tools.workflow_tools.output_cache import log_workflow_run, restore_all, store_all
 from bioinformatics_tools.workflow_tools.programs import ProgramBase
+from bioinformatics_tools.workflow_tools.workflow_registry import WORKFLOWS
 
 LOGGER = logging.getLogger(__name__)
 WORKFLOW_DIR = Path(__file__).parent
-
-
-workflow_keys: dict[str, WorkflowKey] = {
-    'example': WorkflowKey(
-        cmd_identifier='example',
-        snakemake_file='example.smk',
-        other=[''],
-        sif_files=[
-            ('prodigal.sif', '2.6.3-v1.0'),
-        ],
-        label='Example',
-        description='Simple test workflow for development',
-        full_description='A minimal workflow for testing the pipeline infrastructure.',
-    ),
-    'margie': WorkflowKey(
-        cmd_identifier='margie',
-        snakemake_file='margie.smk',
-        other=[''],
-        sif_files=[
-            ('prodigal.sif', '2.6.3-v1.0'),
-            ('pfam_scan_light', 'latest'),
-            ('cogclassifier', 'latest')
-        ],
-        label='Margie',
-        description='Full annotation pipeline (Prodigal, Pfam, COG)',
-        full_description='Comprehensive microbial genome annotation workflow that combines gene prediction with functional annotation. Runs Prodigal for open reading frame prediction, Pfam for protein family identification, and COGclassifier for functional categorization. Results are automatically loaded into a SQLite database for downstream analysis.',
-        tools=[
-            {
-                'name': 'Prodigal',
-                'purpose': 'Gene prediction and ORF identification',
-                'version': '2.6.3',
-                'output': 'GFF3 file with predicted genes and protein sequences (FAA)'
-            },
-            {
-                'name': 'Pfam_scan',
-                'purpose': 'Protein family and domain annotation',
-                'version': 'latest',
-                'output': 'CSV file with Pfam domain hits'
-            },
-            {
-                'name': 'COGclassifier',
-                'purpose': 'Functional categorization using COG database',
-                'version': 'latest',
-                'output': 'TSV files with COG classifications and category counts'
-            }
-        ],
-        configurable_params=[
-            {
-                'param': 'prodigal_threads',
-                'default': 1,
-                'description': 'Number of threads for Prodigal (though Prodigal is single-threaded)',
-                'type': 'int'
-            },
-            {
-                'param': 'cog_threads',
-                'default': 4,
-                'description': 'Number of threads for COGclassifier BLAST search',
-                'type': 'int'
-            },
-            {
-                'param': 'pfam_db',
-                'default': '/depot/lindems/data/Databases/pfam',
-                'description': 'Path to Pfam-A HMM database',
-                'type': 'path'
-            },
-            {
-                'param': 'cog_db',
-                'default': '/depot/lindems/data/Databases/cog/',
-                'description': 'Path to COG database directory',
-                'type': 'path'
-            },
-            {
-                'param': 'margie_db',
-                'default': '/depot/lindems/data/margie/margie.db',
-                'description': 'Path to output SQLite database for storing results',
-                'type': 'path'
-            }
-        ],
-        database_deps=[
-            'Pfam-A HMM profiles',
-            'COG functional database',
-            'SQLite results database'
-        ],
-        docs_url=None
-    ),
-    'selftest': WorkflowKey(
-        cmd_identifier='selftest',
-        snakemake_file='selftest.smk',
-        other=[''],
-        sif_files=[],
-        label='Self Test',
-        description='Quick validation test (no containers)',
-        full_description='Lightweight test workflow that validates SSH, Snakemake, and database caching without using containers. Useful for verifying the pipeline infrastructure is working correctly.',
-    ),
-}
 
 
 class WorkflowBase(ProgramBase):
@@ -130,10 +36,23 @@ class WorkflowBase(ProgramBase):
 
         super().__init__()
 
-    def build_executable(self, key: WorkflowKey, config_dict: dict = None, mode='notdev') -> list[str]:
-        '''Given a workflow data object, with access to config and command line args,
-        build out a snakemake command'''
+    def build_executable(self, key: WorkflowKey, config_dict: dict = None, mode='notdev', compute_config: dict = None) -> list[str]:
+        '''
+        Build snakemake command from workflow key and config.
+
+        Args:
+            key: WorkflowKey defining the workflow
+            config_dict: Snakemake config parameters
+            mode: Execution mode ('dev' or other for slurm)
+            compute_config: Compute cluster config (account, partition, resources)
+        '''
         smk_path = WORKFLOW_DIR / key.snakemake_file
+
+        # Use compute config to determine max_jobs (default to 5)
+        max_jobs = 5
+        if compute_config:
+            max_jobs = compute_config.get('max_jobs', 5)
+
         core_command = [
             'snakemake',
             '-s', str(smk_path),
@@ -142,22 +61,36 @@ class WorkflowBase(ProgramBase):
             '--use-apptainer',
             '--sdm=apptainer',
             '--apptainer-args', '-B /home/ddeemer -B /depot/lindems/data/Databases/',
-            '--jobs=5',
+            f'--jobs={max_jobs}',
             '--latency-wait=60'
         ]
         if mode != 'dev':
             core_command.append('--executor=slurm')
 
-        # Add default SLURM resources (each key=value is a separate arg)
-        #TODO: Grab these values from config OR point to Snakemake Profile
-        if mode != 'dev':
-            core_command.extend([
-                '--default-resources',
-                'slurm_account=lindems',
-                'slurm_partition=cpu',
-                'runtime=30',
-                'mem_mb=4000'
-            ])
+        # Add default SLURM resources from compute config
+        if mode != 'dev' and compute_config:
+            default_resources = ['--default-resources']
+
+            # Required: account
+            account = compute_config.get('account', '').strip()
+            if account:
+                default_resources.append(f'slurm_account={account}')
+
+            # Optional: partition
+            partition = compute_config.get('partition', '').strip()
+            if partition:
+                default_resources.append(f'slurm_partition={partition}')
+
+            # Optional: default runtime and memory
+            if 'default_runtime' in compute_config:
+                default_resources.append(f'runtime={compute_config["default_runtime"]}')
+
+            if 'default_mem_mb' in compute_config:
+                default_resources.append(f'mem_mb={compute_config["default_mem_mb"]}')
+
+            # Only add if we have at least the account
+            if len(default_resources) > 1:
+                core_command.extend(default_resources)
 
         # Add config parameters to pass to snakemake
         if config_dict:
@@ -264,12 +197,12 @@ class WorkflowBase(ProgramBase):
         output_dir = self.conf.get('output_dir', '')
         return f"{output_dir.rstrip('/')}/" if output_dir else ''
 
-    def _run_pipeline(self, key_name: str, smk_config: dict, cache_map: dict = None, mode='dev'):
+    def _run_pipeline(self, key_name: str, smk_config: dict, cache_map: dict = None, mode='dev', compute_config: dict = None):
         '''Shared pipeline execution: cache containers, restore outputs, run snakemake, store outputs.'''
         run_id = str(uuid.uuid4())
         LOGGER.info('Starting workflow "%s" run_id=%s', key_name, run_id)
 
-        selected_wf = workflow_keys.get(key_name)
+        selected_wf = WORKFLOWS.get(key_name)
         if not selected_wf:
             self.failed(f'No workflow key found for "{key_name}"')
             return 1
@@ -284,14 +217,14 @@ class WorkflowBase(ProgramBase):
                 return 1
 
         # Restore cached outputs from DB so snakemake skips completed rules
-        db_path = smk_config.get('margie_db')
+        db_path = smk_config.get('main_database')
         input_file = smk_config.get('input_fasta') or smk_config.get('input_file')
         if cache_map and db_path and input_file:
             restored = restore_all(db_path, input_file, cache_map)
             LOGGER.info('Cache restore results: %s', restored)
 
         # Build and run snakemake
-        wf_command = self.build_executable(selected_wf, config_dict=smk_config, mode=mode)
+        wf_command = self.build_executable(selected_wf, config_dict=smk_config, mode=mode, compute_config=compute_config)
         LOGGER.info('Running snakemake command: %s', ' '.join(wf_command))
         proc = self._run_subprocess(wf_command)
 
@@ -349,7 +282,8 @@ class WorkflowBase(ProgramBase):
         out_step_c_secondary = str(td / f"step_c/{stem}-step_c_count.tsv")
         out_step_c_db = str(td / f"step_c/{stem}-step_c_db.tkn")
 
-        margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
+        # For selftest, use temp DB path (not required from config)
+        selftest_db = str(td / 'selftest.db')
 
         smk_config = {
             'workdir': tmpdir,
@@ -363,7 +297,7 @@ class WorkflowBase(ProgramBase):
             'out_step_c_primary': out_step_c_primary,
             'out_step_c_secondary': out_step_c_secondary,
             'out_step_c_db': out_step_c_db,
-            'margie_db': margie_db,
+            'main_database': selftest_db,
         }
 
         cache_map = {
@@ -419,10 +353,27 @@ class WorkflowBase(ProgramBase):
             self.failed('No input file specified')
             return 1
 
-        stem = Path(input_file).stem
-        prodigal_config = self.conf.get('prodigal', {})
-        margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
+        # Require main_database from config - no fallback
+        main_database = self.conf.get('main_database', None)
+        if not main_database:
+            LOGGER.error('main_database not set in config. Add main_database: <path> to your ~/.config/bioinformatics-tools/config.yaml')
+            self.failed('main_database configuration is required')
+            return 1
 
+        # Expand ~ in database path (SQLite doesn't understand ~)
+        main_database = str(Path(main_database).expanduser())
+
+        # Extract and validate compute config for SLURM mode
+        compute_config = None
+        if mode != 'dev':
+            compute_config = self.conf.get('compute', {}).get('cluster-default', {})
+            slurm_account = compute_config.get('account', '').strip()
+            if not slurm_account:
+                LOGGER.error('compute.cluster-default.account not set in config. Add account: <your-slurm-account> to your ~/.config/bioinformatics-tools/config.yaml')
+                self.failed('SLURM account configuration is required for cluster execution')
+                return 1
+
+        stem = Path(input_file).stem
         prefix = self._output_prefix()
 
         # Output paths
@@ -451,8 +402,13 @@ class WorkflowBase(ProgramBase):
             'cog_outdir': cog_outdir,
             'out_dbcan': f"{stem}-dbcan.tkn",
             'out_kofam': f"{stem}-kofam.tkn",
-            'prodigal_threads': prodigal_config.get('threads', 4),
-            'margie_db': margie_db,
+            'main_database': main_database,
+            # Hierarchical tool configs - pass entire sections to snakemake
+            'prodigal': self.conf.get('prodigal', {}),
+            'pfam': self.conf.get('pfam', {}),
+            'cog': self.conf.get('cog', {}),
+            'dbcan': self.conf.get('dbcan', {}),
+            'kofam': self.conf.get('kofam', {}),
         }
 
         cache_map = {
@@ -464,4 +420,4 @@ class WorkflowBase(ProgramBase):
             'cog_db': [out_cog_db],
         }
 
-        self._run_pipeline('margie', smk_config, cache_map, mode=mode)
+        self._run_pipeline('margie', smk_config, cache_map, mode=mode, compute_config=compute_config)
