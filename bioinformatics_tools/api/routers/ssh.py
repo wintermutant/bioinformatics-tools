@@ -15,26 +15,61 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from dataclasses import asdict
+
 from bioinformatics_tools.api.auth import decrypt_private_key, get_current_user
 from bioinformatics_tools.api.models import GenomeSend, SlurmSend
 from bioinformatics_tools.api.services import job_runner
 from bioinformatics_tools.api.services.job_store import job_store
 from bioinformatics_tools.utilities import ssh_sftp, ssh_slurm
 from bioinformatics_tools.utilities.ssh_connection import make_user_connection
+from bioinformatics_tools.workflow_tools.workflow import workflow_keys
 
 LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/ssh", tags=["ssh"])
 
-# User-facing workflows available from the analyze page.
-# Add new entries here as workflows are added to workflow_keys in workflow.py.
-AVAILABLE_WORKFLOWS: list[dict] = [
-    {"id": "margie", "label": "Margie", "description": "Full annotation pipeline (Prodigal, Pfam, COG)"},
-    {"id": "custom_microbiome", "label": "CustomMicrobiome", "description": "Custom microbiome annotation workflow (coming soon)"},
-]
-
 # Workflows visible on the frontend but not yet implemented.
 STUB_WORKFLOWS: set[str] = {"custom_microbiome"}
+
+
+def _get_available_workflows() -> list[dict]:
+    """
+    Build the list of available workflows from workflow_keys.
+    Returns detailed metadata for each workflow including tools, params, etc.
+    """
+    workflows = []
+
+    # Add workflows from workflow_keys
+    for wf_id, wf_key in workflow_keys.items():
+        # Skip internal test workflows
+        if wf_id in ['example', 'selftest']:
+            continue
+
+        # Convert dataclass to dict and add computed fields
+        wf_dict = asdict(wf_key)
+        wf_dict['id'] = wf_key.cmd_identifier
+        wf_dict['containers'] = [{'name': sif[0], 'version': sif[1]} for sif in wf_key.sif_files]
+        workflows.append(wf_dict)
+
+    # Add stub workflows (not yet implemented but visible)
+    workflows.append({
+        'id': 'custom_microbiome',
+        'label': 'Custom Microbiome',
+        'description': 'Custom microbiome annotation workflow (coming soon)',
+        'full_description': 'A specialized workflow for microbiome annotation. This workflow is currently under development.',
+        'tools': [],
+        'configurable_params': [],
+        'database_deps': [],
+        'docs_url': None,
+        'containers': [],
+        'cmd_identifier': 'custom_microbiome',
+        'snakemake_file': '',
+        'other': [],
+        'sif_files': [],
+    })
+
+    return workflows
 
 
 def _build_connection(current_user: dict):
@@ -54,8 +89,8 @@ def _config_path(home_dir: str) -> str:
 
 @router.get("/workflows")
 async def list_workflows(current_user: dict = Depends(get_current_user)):
-    """Return the list of user-facing workflows available on the analyze page."""
-    return AVAILABLE_WORKFLOWS
+    """Return the list of user-facing workflows with detailed metadata."""
+    return _get_available_workflows()
 
 
 @router.get("/health")
@@ -103,6 +138,89 @@ async def save_config(config: dict, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=500, detail=f"Failed to write remote config: {exc}")
 
 
+@router.post("/config/create-default")
+async def create_default_config(current_user: dict = Depends(get_current_user)):
+    """Create a default config file on the user's cluster if it doesn't exist."""
+    conn = _build_connection(current_user)
+    path = _config_path(current_user["home_dir"])
+
+    # Define default config structure
+    default_config = {
+        "main_database": "~/.local/share/bioinformatics-tools/my-db.db",
+        "compute": {
+            "cluster-default": {
+                "accounts": [],
+                "max_cpus": 0,
+                "queues": "none"
+            }
+        }
+    }
+
+    try:
+        ssh_sftp.write_remote_yaml(path, default_config, connection=conn)
+        LOGGER.info("Created default config for user %s at %s", current_user["username"], path)
+        return {"success": True, "config": default_config}
+    except Exception as exc:
+        LOGGER.error("Failed to create default config for %s: %s", current_user["username"], exc)
+        raise HTTPException(status_code=500, detail=f"Failed to create default config: {exc}")
+
+
+@router.post("/test-path-writable")
+async def test_path_writable(path_data: dict, current_user: dict = Depends(get_current_user)):
+    """Test if a path on the cluster is writable by attempting to create parent directories and a test file."""
+    conn = _build_connection(current_user)
+    test_path = path_data.get("path", "").strip()
+
+    if not test_path:
+        raise HTTPException(status_code=400, detail="Path is required")
+
+    try:
+        ssh = conn.connect()
+
+        # Expand ~ to actual home directory
+        if test_path.startswith("~"):
+            test_path = test_path.replace("~", current_user["home_dir"], 1)
+
+        # Get the directory (remove filename if present)
+        import posixpath
+        test_dir = posixpath.dirname(test_path)
+
+        # Try to create the directory structure
+        _, stdout, stderr = ssh.exec_command(f'mkdir -p "{test_dir}" 2>&1 && echo "DIR_OK"')
+        output = stdout.read().decode().strip()
+
+        if "DIR_OK" not in output:
+            ssh.close()
+            return {
+                "writable": False,
+                "error": f"Cannot create directory: {test_dir}",
+                "details": output
+            }
+
+        # Try to write a test file
+        test_file = f"{test_path}.write_test"
+        _, stdout, stderr = ssh.exec_command(f'touch "{test_file}" 2>&1 && rm -f "{test_file}" 2>&1 && echo "WRITE_OK"')
+        output = stdout.read().decode().strip()
+
+        ssh.close()
+
+        if "WRITE_OK" in output:
+            return {"writable": True}
+        else:
+            return {
+                "writable": False,
+                "error": f"Path is not writable: {test_path}",
+                "details": output
+            }
+
+    except Exception as exc:
+        LOGGER.error("Failed to test path writability for %s: %s", current_user["username"], exc)
+        return {
+            "writable": False,
+            "error": f"Failed to test path: {str(exc)}"
+        }
+
+
 @router.post("/run_slurm")
 async def run_slurm(content: SlurmSend, current_user: dict = Depends(get_current_user)):
     """Submit a SLURM job and return the job ID immediately."""
@@ -122,8 +240,10 @@ async def run_ssh(content: SlurmSend, current_user: dict = Depends(get_current_u
 
 @router.post("/run_workflow")
 async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get_current_user)):
-    """Submit a genome analysis workflow by name. Workflow must be in AVAILABLE_WORKFLOWS."""
-    allowed_ids = {wf["id"] for wf in AVAILABLE_WORKFLOWS}
+    """Submit a genome analysis workflow by name."""
+    available_workflows = _get_available_workflows()
+    allowed_ids = {wf["id"] for wf in available_workflows}
+
     if genome_data.workflow not in allowed_ids:
         raise HTTPException(status_code=400, detail=f"Unknown workflow '{genome_data.workflow}'. Available: {sorted(allowed_ids)}")
 
