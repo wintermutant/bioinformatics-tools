@@ -94,7 +94,11 @@ def store(db_path: str, input_file: str, tool_name: str,
     input_hash = _compute_file_hash(input_file)
     now = datetime.now(timezone.utc).isoformat()
 
-    conn = sqlite3.connect(db_path)
+    # Ensure parent directory exists before creating database
+    db_path_obj = Path(db_path).expanduser()
+    db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(str(db_path_obj))
     try:
         _ensure_table(conn)
         for path in output_paths:
