@@ -22,6 +22,7 @@ from bioinformatics_tools.api.auth import (
 from bioinformatics_tools.api.database import get_db
 from bioinformatics_tools.api.models import (
     TokenResponse,
+    UpdateClusterCredentials,
     UserLogin,
     UserProfile,
     UserRegister,
@@ -172,3 +173,86 @@ def me(current_user: dict = Depends(get_current_user)):
         home_dir=row['home_dir'],
         created_at=row['created_at'],
     )
+
+
+@router.put('/update-credentials')
+def update_credentials(body: UpdateClusterCredentials, current_user: dict = Depends(get_current_user)):
+    """
+    Update the user's cluster credentials (host, username, and/or private key).
+
+    Validates any new private key and tests the SSH connection before updating.
+    At least one field must be provided.
+    """
+    if not any([body.cluster_host, body.cluster_username, body.private_key]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='At least one field (cluster_host, cluster_username, or private_key) must be provided'
+        )
+
+    # Get current credentials from DB
+    with get_db() as db:
+        row = db.execute(
+            'SELECT cluster_host, cluster_username, private_key_encrypted, home_dir FROM users WHERE id = ?',
+            (current_user['user_id'],)
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
+
+    # Build the effective credentials (new values override old)
+    from bioinformatics_tools.api.auth import decrypt_private_key
+
+    new_host = body.cluster_host or row['cluster_host']
+    new_username = body.cluster_username or row['cluster_username']
+    new_key = body.private_key if body.private_key else decrypt_private_key(row['private_key_encrypted'])
+
+    # Validate private key if provided
+    if body.private_key:
+        _validate_private_key(body.private_key)
+
+    # Test SSH connection with the new credentials
+    try:
+        conn = make_user_connection(new_host, new_username, new_key)
+        ssh = conn.connect()
+        _, stdout, _ = ssh.exec_command('echo $HOME')
+        home_dir = stdout.read().decode().strip()
+        ssh.close()
+        if not home_dir:
+            raise ValueError('Remote returned empty $HOME')
+    except Exception as exc:
+        LOGGER.warning(
+            'SSH verification failed for %s@%s during credential update: %s',
+            new_username, new_host, exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f'Could not connect to {new_host} as {new_username}. '
+                'Check your host, username, and private key.'
+            )
+        )
+
+    # Update database
+    updates = {}
+    if body.cluster_host:
+        updates['cluster_host'] = body.cluster_host
+    if body.cluster_username:
+        updates['cluster_username'] = body.cluster_username
+    if body.private_key:
+        updates['private_key_encrypted'] = encrypt_private_key(body.private_key)
+
+    # Always update home_dir in case it changed
+    updates['home_dir'] = home_dir
+
+    if updates:
+        set_clause = ', '.join(f'{key} = ?' for key in updates.keys())
+        values = list(updates.values()) + [current_user['user_id']]
+
+        with get_db() as db:
+            db.execute(
+                f'UPDATE users SET {set_clause} WHERE id = ?',
+                values
+            )
+
+    LOGGER.info('User %s updated cluster credentials', current_user['username'])
+    return {'success': True, 'message': 'Cluster credentials updated successfully'}
