@@ -24,29 +24,95 @@ WORKFLOW_DIR = Path(__file__).parent
 
 workflow_keys: dict[str, WorkflowKey] = {
     'example': WorkflowKey(
-    cmd_identifier='example',
-    snakemake_file='example.smk',
-    other=[''],
-    sif_files=[
-        ('prodigal.sif', '2.6.3-v1.0'),
-        ]
+        cmd_identifier='example',
+        snakemake_file='example.smk',
+        other=[''],
+        sif_files=[
+            ('prodigal.sif', '2.6.3-v1.0'),
+        ],
+        label='Example',
+        description='Simple test workflow for development',
+        full_description='A minimal workflow for testing the pipeline infrastructure.',
     ),
     'margie': WorkflowKey(
-    cmd_identifier='margie',
-    snakemake_file='margie.smk',
-    other=[''],
-    sif_files=[
-        ('prodigal.sif', '2.6.3-v1.0'),
-        # ('run_dbcan_light', '4.2.0'),
-        # ('kofam_scan_light', 'latest'),
-        ('pfam_scan_light', 'latest'),
-        ('cogclassifier', 'latest')]
+        cmd_identifier='margie',
+        snakemake_file='margie.smk',
+        other=[''],
+        sif_files=[
+            ('prodigal.sif', '2.6.3-v1.0'),
+            ('pfam_scan_light', 'latest'),
+            ('cogclassifier', 'latest')
+        ],
+        label='Margie',
+        description='Full annotation pipeline (Prodigal, Pfam, COG)',
+        full_description='Comprehensive microbial genome annotation workflow that combines gene prediction with functional annotation. Runs Prodigal for open reading frame prediction, Pfam for protein family identification, and COGclassifier for functional categorization. Results are automatically loaded into a SQLite database for downstream analysis.',
+        tools=[
+            {
+                'name': 'Prodigal',
+                'purpose': 'Gene prediction and ORF identification',
+                'version': '2.6.3',
+                'output': 'GFF3 file with predicted genes and protein sequences (FAA)'
+            },
+            {
+                'name': 'Pfam_scan',
+                'purpose': 'Protein family and domain annotation',
+                'version': 'latest',
+                'output': 'CSV file with Pfam domain hits'
+            },
+            {
+                'name': 'COGclassifier',
+                'purpose': 'Functional categorization using COG database',
+                'version': 'latest',
+                'output': 'TSV files with COG classifications and category counts'
+            }
+        ],
+        configurable_params=[
+            {
+                'param': 'prodigal_threads',
+                'default': 1,
+                'description': 'Number of threads for Prodigal (though Prodigal is single-threaded)',
+                'type': 'int'
+            },
+            {
+                'param': 'cog_threads',
+                'default': 4,
+                'description': 'Number of threads for COGclassifier BLAST search',
+                'type': 'int'
+            },
+            {
+                'param': 'pfam_db',
+                'default': '/depot/lindems/data/Databases/pfam',
+                'description': 'Path to Pfam-A HMM database',
+                'type': 'path'
+            },
+            {
+                'param': 'cog_db',
+                'default': '/depot/lindems/data/Databases/cog/',
+                'description': 'Path to COG database directory',
+                'type': 'path'
+            },
+            {
+                'param': 'margie_db',
+                'default': '/depot/lindems/data/margie/margie.db',
+                'description': 'Path to output SQLite database for storing results',
+                'type': 'path'
+            }
+        ],
+        database_deps=[
+            'Pfam-A HMM profiles',
+            'COG functional database',
+            'SQLite results database'
+        ],
+        docs_url=None
     ),
     'selftest': WorkflowKey(
-    cmd_identifier='selftest',
-    snakemake_file='selftest.smk',
-    other=[''],
-    sif_files=[],
+        cmd_identifier='selftest',
+        snakemake_file='selftest.smk',
+        other=[''],
+        sif_files=[],
+        label='Self Test',
+        description='Quick validation test (no containers)',
+        full_description='Lightweight test workflow that validates SSH, Snakemake, and database caching without using containers. Useful for verifying the pipeline infrastructure is working correctly.',
     ),
 }
 
@@ -261,12 +327,12 @@ class WorkflowBase(ProgramBase):
             return 1
 
         input_path = Path(input_file)
-        prodigal_config = self.conf.get('prodigal')
+        prodigal_config = self.conf.get('prodigal', {})
 
         smk_config = {
             'input_fasta': input_file,
             'output_fasta': f"{input_path.stem}-output.txt",
-            'prodigal_threads': prodigal_config.get('threads'),
+            'prodigal_threads': prodigal_config.get('threads', 4),
         }
 
         self._run_pipeline('example', smk_config)
@@ -354,7 +420,7 @@ class WorkflowBase(ProgramBase):
             return 1
 
         stem = Path(input_file).stem
-        prodigal_config = self.conf.get('prodigal')
+        prodigal_config = self.conf.get('prodigal', {})
         margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
 
         prefix = self._output_prefix()
@@ -385,7 +451,7 @@ class WorkflowBase(ProgramBase):
             'cog_outdir': cog_outdir,
             'out_dbcan': f"{stem}-dbcan.tkn",
             'out_kofam': f"{stem}-kofam.tkn",
-            'prodigal_threads': prodigal_config.get('threads'),
+            'prodigal_threads': prodigal_config.get('threads', 4),
             'margie_db': margie_db,
         }
 

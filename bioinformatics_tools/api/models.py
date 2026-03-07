@@ -56,3 +56,9 @@ class UserProfile(BaseModel):
     cluster_username: str
     home_dir: str
     created_at: str
+
+
+class UpdateClusterCredentials(BaseModel):
+    cluster_host: str | None = None
+    cluster_username: str | None = None
+    private_key: str | None = None   # plaintext SSH private key — encrypted before storage
