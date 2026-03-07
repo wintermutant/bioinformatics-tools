@@ -327,12 +327,12 @@ class WorkflowBase(ProgramBase):
             return 1
 
         input_path = Path(input_file)
-        prodigal_config = self.conf.get('prodigal')
+        prodigal_config = self.conf.get('prodigal', {})
 
         smk_config = {
             'input_fasta': input_file,
             'output_fasta': f"{input_path.stem}-output.txt",
-            'prodigal_threads': prodigal_config.get('threads'),
+            'prodigal_threads': prodigal_config.get('threads', 4),
         }
 
         self._run_pipeline('example', smk_config)
@@ -420,7 +420,7 @@ class WorkflowBase(ProgramBase):
             return 1
 
         stem = Path(input_file).stem
-        prodigal_config = self.conf.get('prodigal')
+        prodigal_config = self.conf.get('prodigal', {})
         margie_db = self.conf.get('margie_db', '/depot/lindems/data/margie/margie.db')
 
         prefix = self._output_prefix()
@@ -451,7 +451,7 @@ class WorkflowBase(ProgramBase):
             'cog_outdir': cog_outdir,
             'out_dbcan': f"{stem}-dbcan.tkn",
             'out_kofam': f"{stem}-kofam.tkn",
-            'prodigal_threads': prodigal_config.get('threads'),
+            'prodigal_threads': prodigal_config.get('threads', 4),
             'margie_db': margie_db,
         }
 
