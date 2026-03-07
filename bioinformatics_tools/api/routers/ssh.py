@@ -23,7 +23,7 @@ from bioinformatics_tools.api.services import job_runner
 from bioinformatics_tools.api.services.job_store import job_store
 from bioinformatics_tools.utilities import ssh_sftp, ssh_slurm
 from bioinformatics_tools.utilities.ssh_connection import make_user_connection
-from bioinformatics_tools.workflow_tools.workflow import workflow_keys
+from bioinformatics_tools.workflow_tools.workflow_registry import WORKFLOWS, REQUIRED_SYSTEM_PARAMS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,13 +35,14 @@ STUB_WORKFLOWS: set[str] = {"custom_microbiome"}
 
 def _get_available_workflows() -> list[dict]:
     """
-    Build the list of available workflows from workflow_keys.
+    Build the list of available workflows from WORKFLOWS registry.
     Returns detailed metadata for each workflow including tools, params, etc.
+    Automatically merges REQUIRED_SYSTEM_PARAMS with workflow-specific params.
     """
     workflows = []
 
-    # Add workflows from workflow_keys
-    for wf_id, wf_key in workflow_keys.items():
+    # Add workflows from WORKFLOWS registry
+    for wf_id, wf_key in WORKFLOWS.items():
         # Skip internal test workflows
         if wf_id in ['example', 'selftest']:
             continue
@@ -50,16 +51,22 @@ def _get_available_workflows() -> list[dict]:
         wf_dict = asdict(wf_key)
         wf_dict['id'] = wf_key.cmd_identifier
         wf_dict['containers'] = [{'name': sif[0], 'version': sif[1]} for sif in wf_key.sif_files]
+
+        # Merge system-wide required params with workflow-specific params
+        # System params come first since they're infrastructure-level
+        wf_dict['configurable_params'] = REQUIRED_SYSTEM_PARAMS + (wf_key.configurable_params or [])
+
         workflows.append(wf_dict)
 
     # Add stub workflows (not yet implemented but visible)
+    # Even stub workflows get system params since they'll need them when implemented
     workflows.append({
         'id': 'custom_microbiome',
         'label': 'Custom Microbiome',
         'description': 'Custom microbiome annotation workflow (coming soon)',
         'full_description': 'A specialized workflow for microbiome annotation. This workflow is currently under development.',
         'tools': [],
-        'configurable_params': [],
+        'configurable_params': REQUIRED_SYSTEM_PARAMS,  # Stub still needs system params
         'database_deps': [],
         'docs_url': None,
         'containers': [],
@@ -140,21 +147,25 @@ async def save_config(config: dict, current_user: dict = Depends(get_current_use
 
 @router.post("/config/create-default")
 async def create_default_config(current_user: dict = Depends(get_current_user)):
-    """Create a default config file on the user's cluster if it doesn't exist."""
+    """Create a default config file with all system defaults populated."""
     conn = _build_connection(current_user)
     path = _config_path(current_user["home_dir"])
 
-    # Define default config structure
+    # Build default config from REQUIRED_SYSTEM_PARAMS
     default_config = {
         "main_database": "~/.local/share/bioinformatics-tools/my-db.db",
         "compute": {
-            "cluster-default": {
-                "accounts": [],
-                "max_cpus": 0,
-                "queues": "none"
-            }
+            "cluster-default": {}
         }
     }
+
+    # Populate compute.cluster-default with all defaults from REQUIRED_SYSTEM_PARAMS
+    for param in REQUIRED_SYSTEM_PARAMS:
+        if param['param'].startswith('compute.cluster-default.'):
+            key = param['param'].split('.')[-1]  # Extract the last part (e.g., 'account', 'partition')
+            default_value = param.get('default')
+            # Use empty string for required fields with no default, otherwise use the default
+            default_config['compute']['cluster-default'][key] = default_value if default_value is not None else ""
 
     try:
         ssh_sftp.write_remote_yaml(path, default_config, connection=conn)
@@ -251,6 +262,36 @@ async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get
         raise HTTPException(status_code=501, detail=f"Workflow '{genome_data.workflow}' is not yet implemented. Check back soon!")
 
     conn = _build_connection(current_user)
+
+    # Pre-flight: validate required config values are set
+    config_path = _config_path(current_user["home_dir"])
+    try:
+        user_config = ssh_sftp.read_remote_yaml(config_path, connection=conn)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Configuration file not found. Please create a configuration in your Profile settings first."
+        )
+
+    # Validate required fields
+    missing_fields = []
+
+    # Check main_database
+    main_db = user_config.get('main_database')
+    if not main_db or str(main_db).strip() == '':
+        missing_fields.append('main_database')
+
+    # Check compute.cluster-default.account
+    account = user_config.get('compute', {}).get('cluster-default', {}).get('account')
+    if not account or str(account).strip() == '':
+        missing_fields.append('compute.cluster-default.account (SLURM account)')
+
+    if missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Required configuration missing: {', '.join(missing_fields)}. "
+                   "Please configure these in your Profile settings before running workflows."
+        )
 
     # Pre-flight: verify the genome file exists on the cluster before creating a job.
     try:
