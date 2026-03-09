@@ -5,6 +5,37 @@ import os
 
 WORKFLOW_DIR = os.path.dirname(workflow.snakefile)
 
+def rc(rule_name, param, default=None):
+    """
+    Rule Config: Get config value for a specific rule's parameter.
+
+    Hierarchical config pattern: rule run_<tool> reads from config key <tool>:
+
+    Example:
+        rule run_prodigal reads from config:
+            prodigal:
+              threads: 1
+              mem_mb: 2048
+              runtime: 30
+
+    Usage in rules:
+        threads: rc('prodigal', 'threads', 1)
+        resources: mem_mb=rc('prodigal', 'mem_mb', 2048)
+
+    Args:
+        rule_name: The tool name (matches config key after run_, e.g., 'prodigal')
+        param: Parameter name (e.g., 'threads', 'mem_mb', 'runtime')
+        default: Default value if not found in config
+
+    Returns:
+        The config value or default if not set
+    """
+    # Access workflow.config instead of config for reliable scoping
+    rule_config = workflow.config.get(rule_name, {})
+    if isinstance(rule_config, dict):
+        return rule_config.get(param, default)
+    return default
+
 rule all:
     input:
         config.get('out_prodigal_db', 'prodigal_db.tkn'),
@@ -24,12 +55,11 @@ rule run_prodigal:
         gff=config.get('out_prodigal', 'prodigal/prodigal.tkn'),
         faa=config.get('out_prodigal_faa', 'prodigal/prodigal.faa')
     group: "prodigal"
-    threads: config.get('prodigal_threads', 1)
+    threads: rc('prodigal', 'threads', 1)
     resources:
-        mem_mb=2048,
-        runtime=30
-        # mem_mb=lambda wc, input: max(2.5 * input.size_mb, 300)
-    container: "~/.cache/bioinformatics-tools/prodigal.sif"  # TODO: Need to download if not there
+        mem_mb=rc('prodigal', 'mem_mb', 2048),
+        runtime=rc('prodigal', 'runtime', 30)
+    container: "~/.cache/bioinformatics-tools/prodigal.sif"
     shell:
         """
         prodigal -i {input} -f gff -o {output.gff} -a {output.faa}
@@ -44,7 +74,7 @@ rule load_prodigal_to_db:
         tkn=config.get('out_prodigal_db', 'prodigal/prodigal_db.tkn')
     group: "prodigal"
     params:
-        db=config.get('margie_db', '/depot/lindems/data/margie/margie.db'),
+        db=config['main_database'],  # Required - no fallback
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -59,12 +89,12 @@ rule run_pfam:
         config.get('out_pfam', 'pfam/pfam.tkn')
     group: "pfam"
     container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
-    threads: 4
+    threads: rc('pfam', 'threads', 4)
     resources:
-        mem_mb=4000,
-        runtime=240
+        mem_mb=rc('pfam', 'mem_mb', 4000),
+        runtime=rc('pfam', 'runtime', 240)
     params:
-        db=config.get("pfam_db", "/depot/lindems/data/Databases/pfam")
+        db=rc('pfam', 'db', "/depot/lindems/data/Databases/pfam")
     shell:
         """
         pfam_scan.py {input} {params.db} -out {output} -cpu {threads}
@@ -79,7 +109,7 @@ rule load_pfam_to_db:
         tkn=config.get('out_pfam_db', 'pfam/pfam_db.tkn')
     group: "pfam"
     params:
-        db=config.get('margie_db', 'margie.db'),
+        db=config['main_database'],  # Required - no fallback
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -97,12 +127,12 @@ rule run_cog:
         tkn=config.get('out_cog', 'cog/cog.tkn')
     group: "cog"
     params:
-        outdir=config.get('cog_outdir', 'cog'),
-        db=config.get('cog_db', '/depot/lindems/data/Databases/cog/')
-    threads: config.get('cog_threads', 4)
+        outdir=rc('cog', 'outdir', 'cog'),
+        db=rc('cog', 'db', '/depot/lindems/data/Databases/cog/')
+    threads: rc('cog', 'threads', 4)
     resources:
-        mem_mb=8192,
-        runtime=120
+        mem_mb=rc('cog', 'mem_mb', 8192),
+        runtime=rc('cog', 'runtime', 120)
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
     shell:
         """
@@ -122,7 +152,7 @@ rule load_cog_to_db:
         tkn=config.get('out_cog_db', 'cog/cog_db.tkn')
     group: "cog"
     params:
-        db=config.get('margie_db', 'margie.db'),
+        db=config['main_database'],  # Required - no fallback
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -136,11 +166,12 @@ rule run_dbcan:
         config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
     output:
         tkn = config.get('out_dbcan', '/depot/lindems/data/Database/example-output/small-dbcan.out')
-    threads: 4
+    threads: rc('dbcan', 'threads', 4)
     resources:
-        mem_mb=7984
+        mem_mb=rc('dbcan', 'mem_mb', 7984),
+        runtime=rc('dbcan', 'runtime', 180)
     params:
-        db="/depot/lindems/data/Databases/cazyme/db"
+        db=rc('dbcan', 'db', "/depot/lindems/data/Databases/cazyme/db")
     container: "~/.cache/bioinformatics-tools/run_dbcan_light.sif"
     shell:
         """
@@ -155,10 +186,13 @@ rule run_kofam:
     output:
         config.get('out_kofam', './smallish-kofam.out')
     container: "~/.cache/bioinformatics-tools/kofam_scan_light.sif"
-    threads: 8
+    threads: rc('kofam', 'threads', 8)
+    resources:
+        mem_mb=rc('kofam', 'mem_mb', 4000),
+        runtime=rc('kofam', 'runtime', 180)
     params:
-        profile_db="/depot/lindems/data/Databases/kofams/profiles",
-        ko_list="/depot/lindems/data/Databases/kofams/ko_list"
+        profile_db=rc('kofam', 'profile_db', "/depot/lindems/data/Databases/kofams/profiles"),
+        ko_list=rc('kofam', 'ko_list', "/depot/lindems/data/Databases/kofams/ko_list")
     shell:
         """
         exec_annotation {input} -o {output} --profile {params.profile_db} --ko-list {params.ko_list} \

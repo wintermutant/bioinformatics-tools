@@ -66,8 +66,30 @@ def run_ssh_task(job_id: str, command: str, connection: SSHConnection):
     )
     checker.start()
 
+    exit_code = 0  # Track command exit code
+
     try:
         for line in ssh_slurm.submit_ssh_job(cmd=command, connection=connection):
+            # Detect exit code metadata from submit_ssh_job
+            if line.startswith("__EXIT_CODE__:"):
+                try:
+                    exit_code = int(line.split(":", 1)[1])
+                    LOGGER.info("Captured exit code: %d", exit_code)
+                except (ValueError, IndexError):
+                    LOGGER.warning("Failed to parse exit code from: %s", line)
+                continue
+
+            # Detect structured Report metadata from workflow
+            if line.startswith("__REPORT__:"):
+                try:
+                    report_json = line.split(":", 1)[1]
+                    report_data = json.loads(report_json)
+                    job_store.update(job_id, report=report_data)
+                    LOGGER.info("Captured structured report: status=%s", report_data.get('status', {}).get('code'))
+                except (json.JSONDecodeError, IndexError) as e:
+                    LOGGER.warning("Failed to parse report JSON: %s", e)
+                continue
+
             # Detect work_dir metadata from submit_ssh_job
             if line.startswith("__WORKDIR__:"):
                 job_store.update(job_id, work_dir=line.split(":", 1)[1])
@@ -113,9 +135,15 @@ def run_ssh_task(job_id: str, command: str, connection: SSHConnection):
             if "snakemake" in line.lower():
                 job_store.update(job_id, phase="Running Snakemake")
 
-        job_store.update(job_id, status="completed", phase="Done")
+        # Check exit code and mark as failed if non-zero
+        if exit_code != 0:
+            job_store.update(job_id, status="failed", phase="Failed")
+            job_store.append_log(job_id, f"\n\n=== Command exited with code {exit_code} ===")
+            LOGGER.error("Job %s failed with exit code %d", job_id, exit_code)
+        else:
+            job_store.update(job_id, status="completed", phase="Done")
     except Exception as e:
-        job_store.update(job_id, status="failed")
+        job_store.update(job_id, status="failed", phase="Error")
         job_store.append_log(job_id, f"\nError: {str(e)}")
 
 

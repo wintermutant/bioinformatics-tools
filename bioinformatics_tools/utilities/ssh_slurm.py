@@ -38,7 +38,7 @@ def submit_ssh_job(
     connection: SSHConnection,
 ):
     '''Generator that streams remote output line-by-line via SSH.
-    Yields a __WORKDIR__: metadata line first, then each output line as it arrives.
+    Yields each output line as it arrives, then a final __EXIT_CODE__: metadata line.
     '''
     ssh = connection.connect()
     LOGGER.info('Connected!')
@@ -52,7 +52,13 @@ def submit_ssh_job(
         LOGGER.info('[remote] %s', line.rstrip())
         yield line.rstrip()
 
-    LOGGER.info('Remote execution completed.')
+    # Capture exit code from the channel
+    exit_code = stdout.channel.recv_exit_status()
+    LOGGER.info('Remote execution completed with exit code: %d', exit_code)
+
+    # Yield exit code as metadata line
+    yield f'__EXIT_CODE__:{exit_code}'
+
     ssh.close()
 
 

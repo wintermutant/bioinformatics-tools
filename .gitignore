@@ -1,12 +1,14 @@
 # Local stuff
 *.code-workspace
 *-VALIDATED*
+uv.lock
 
 # Testing and mock
 *_mock*/
 
 # AI / Claude
 settings.local.json
+.claude/*
 
 # Documentation
 ## mkdocs

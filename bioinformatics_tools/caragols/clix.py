@@ -263,6 +263,8 @@ class App:
 
         if self.run_mode == "cli":
             LOGGER.info('\n📄 Report Generated:\n%s', self.report.formatted(form))
+            # Emit structured report as JSON for API parsing
+            print(f'__REPORT__:{self.report.toJSON()}', flush=True)
             self.done()
             if self.report.status.indicates_failure:
                 sys.exit(1)
