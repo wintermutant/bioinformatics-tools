@@ -64,7 +64,8 @@ WORKFLOWS: dict[str, WorkflowKey] = {
         sif_files=[
             ('prodigal.sif', '2.6.3-v1.0'),
             ('pfam_scan_light', 'latest'),
-            ('cogclassifier', 'latest')
+            ('cogclassifier', 'latest'),
+            ('kofam_scan_light_bsp', 'latest'),
         ],
         label='Margie',
         description='Full annotation pipeline (Prodigal, Pfam, COG)',
