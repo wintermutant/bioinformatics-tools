@@ -39,18 +39,18 @@ def rc(rule_name, param, default=None):
 rule all:
     input:
         config.get('out_prodigal_db', 'prodigal_db.tkn'),
-        # config.get('out_dbcan'),
-        # config.get('out_kofam'),
-        # config.get('out_pfam')
         config.get('out_pfam_db', 'pfam_db.tkn'),
         config.get('out_cog_db', 'cog_db.tkn'),
+        config.get('out_kofam_db'),
+        # config.get('out_dbcan'),
+        # config.get('out_pfam')
 
 
 
 rule run_prodigal:
     """prodigal"""
     input:
-        config.get('input_fasta', '/home/ddeemer/smallish.fasta')
+        config.get('input_fasta', '/home/ddeemer/smallish.fasta')  # change input_fasta to input for sake of paper
     output:
         gff=config.get('out_prodigal', 'prodigal/prodigal.tkn'),
         faa=config.get('out_prodigal_faa', 'prodigal/prodigal.faa')
@@ -120,7 +120,7 @@ rule load_pfam_to_db:
 rule run_cog:
     """COGclassifier - classify proteins into COG functional categories"""
     input:
-        faa=config.get('out_prodigal_faa', '/home/ddeemer/smallish.faa')
+        faa=config.get('out_prodigal_faa')
     output:
         classify=config.get('out_cog_classify', 'cog/cog_classify.tsv'),
         counts=config.get('out_cog_count', 'cog/cog_count.tsv'),
@@ -182,14 +182,15 @@ rule run_dbcan:
 
 rule run_kofam:
     input:
-        config.get('input_fasta', './smallish.fasta')
+        faa=config.get('out_prodigal_faa')
     output:
-        config.get('out_kofam', './smallish-kofam.out')
-    container: "~/.cache/bioinformatics-tools/kofam_scan_light.sif"
-    threads: rc('kofam', 'threads', 8)
+        config.get('out_kofam', 'kofam/kofam.tkn')
+    container: "~/.cache/bioinformatics-tools/kofam_scan_light_bsp.sif"
+    threads: rc('kofam', 'threads', 16)
     resources:
         mem_mb=rc('kofam', 'mem_mb', 4000),
         runtime=rc('kofam', 'runtime', 180)
+    group: "kofam"
     params:
         profile_db=rc('kofam', 'profile_db', "/depot/lindems/data/Databases/kofams/profiles"),
         ko_list=rc('kofam', 'ko_list', "/depot/lindems/data/Databases/kofams/ko_list")
@@ -197,6 +198,22 @@ rule run_kofam:
         """
         exec_annotation {input} -o {output} --profile {params.profile_db} --ko-list {params.ko_list} \
         --cpu {threads} --format detail-tsv
+        """
+
+
+rule load_kofam_to_db:
+    """Load KOFam_Scan output into SQLite database"""
+    input:
+        results=config.get('out_kofam'),
+    output:
+        tkn=config.get('out_kofam_db', 'kofam/kofam_db.tkn')
+    group: "kofam"
+    params:
+        db=config['main_database'],  # Required - no fallback
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} tsv {input.results} {params.db} kofam_scan --token {output.tkn}
         """
 
 

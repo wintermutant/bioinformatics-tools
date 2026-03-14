@@ -201,3 +201,65 @@ def check_multiple_slurm_jobs(
 
     ssh.close()
     return results
+
+
+def cancel_slurm_jobs(
+    job_ids: list[str],
+    connection: SSHConnection,
+) -> None:
+    """Cancel multiple SLURM jobs via scancel.
+
+    Args:
+        job_ids: List of SLURM job IDs to cancel
+        connection: SSH connection to the cluster
+    """
+    if not job_ids:
+        LOGGER.info('No SLURM jobs to cancel')
+        return
+
+    ssh = connection.connect()
+    ids_str = ",".join(job_ids)
+
+    LOGGER.info('Cancelling SLURM jobs: %s', ids_str)
+    stdin, stdout, stderr = ssh.exec_command(f'scancel {ids_str}')
+
+    # Read output to ensure command completes
+    stdout.read()
+    error = stderr.read().decode().strip()
+
+    if error:
+        LOGGER.warning('scancel stderr: %s', error)
+    else:
+        LOGGER.info('Successfully cancelled %d SLURM job(s)', len(job_ids))
+
+    ssh.close()
+
+
+def kill_remote_process(
+    process_pattern: str,
+    connection: SSHConnection,
+) -> None:
+    """Kill remote processes matching a pattern.
+
+    Args:
+        process_pattern: Pattern to match in process command line (for pkill -f)
+        connection: SSH connection to the cluster
+    """
+    ssh = connection.connect()
+
+    # Use pkill -f to kill processes matching the pattern
+    # The -f flag matches against the full command line
+    LOGGER.info('Killing remote processes matching: %s', process_pattern)
+    stdin, stdout, stderr = ssh.exec_command(f'pkill -f "{process_pattern}"')
+
+    # Read output to ensure command completes
+    stdout.read()
+    error = stderr.read().decode().strip()
+
+    # pkill returns 0 if at least one process was killed, 1 if none matched
+    # So we don't treat non-zero exit as an error
+    if error:
+        LOGGER.debug('pkill stderr: %s', error)
+
+    LOGGER.info('Sent kill signal to processes matching: %s', process_pattern)
+    ssh.close()

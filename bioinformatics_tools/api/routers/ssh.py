@@ -323,7 +323,8 @@ async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get
     job_store.update(job_id, work_dir=output_dir)
 
     command = (
-        f"uvx --from ~/bioinformatics-tools/ --force-reinstall"
+        f"echo 'Installing bioinformatics-tools repository...' && "
+        f"UV_NO_PROGRESS=1 NO_COLOR=1 uvx --from ~/bioinformatics-tools/ --force-reinstall --quiet"
         f" dane_wf {genome_data.workflow} input: {genome_data.genome_path} output_dir: {output_dir}"
     )
     job_runner.submit_job(job_id, command, connection=conn)
@@ -340,6 +341,38 @@ async def get_job_status(job_id: str, current_user: dict = Depends(get_current_u
     if job.get("user_id") != current_user["user_id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     return {**job, "cluster_host": current_user["cluster_host"]}
+
+
+@router.post("/cancel_job/{job_id}")
+async def cancel_job(job_id: str, current_user: dict = Depends(get_current_user)):
+    """Emergency stop - cancel all SLURM jobs, kill remote process, and mark job as cancelled."""
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("user_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    conn = _build_connection(current_user)
+
+    # Cancel all SLURM subjobs
+    slurm_ids = [sj["job_id"] for sj in job_store.get_slurm_jobs(job_id)]
+    if slurm_ids:
+        ssh_slurm.cancel_slurm_jobs(slurm_ids, connection=conn)
+        LOGGER.info("Cancelled %d SLURM jobs for job %s", len(slurm_ids), job_id)
+
+    # Kill the remote dane_wf process on the login node
+    # This ensures the SSH task stops immediately instead of waiting for Snakemake to notice
+    ssh_slurm.kill_remote_process("dane_wf", connection=conn)
+    LOGGER.info("Killed remote dane_wf process for job %s", job_id)
+
+    # Mark job as cancelled (this will also stop the status checker daemon)
+    job_store.cancel(job_id)
+
+    return {
+        "success": True,
+        "message": f"Cancelled job {job_id}",
+        "slurm_jobs_cancelled": len(slurm_ids)
+    }
 
 
 @router.get("/job_files/{job_id}")

@@ -200,6 +200,7 @@ class WorkflowBase(ProgramBase):
     def _run_pipeline(self, key_name: str, smk_config: dict, cache_map: dict = None, mode='dev', compute_config: dict = None):
         '''Shared pipeline execution: cache containers, restore outputs, run snakemake, store outputs.'''
         run_id = str(uuid.uuid4())
+        LOGGER.info('Finished installing bioinformatics-tools repository')
         LOGGER.info('Starting workflow "%s" run_id=%s', key_name, run_id)
 
         selected_wf = WORKFLOWS.get(key_name)
@@ -219,6 +220,7 @@ class WorkflowBase(ProgramBase):
         # Restore cached outputs from DB so snakemake skips completed rules
         db_path = smk_config.get('main_database')
         input_file = smk_config.get('input_fasta') or smk_config.get('input_file')
+        restored = {}
         if cache_map and db_path and input_file:
             restored = restore_all(db_path, input_file, cache_map)
             LOGGER.info('Cache restore results: %s', restored)
@@ -244,7 +246,13 @@ class WorkflowBase(ProgramBase):
 
         # Success — store outputs and log the run
         if cache_map and db_path and input_file:
-            store_all(db_path, input_file, cache_map)
+            # Only store outputs that were cache misses (newly computed)
+            tools_to_store = {tool: paths for tool, paths in cache_map.items()
+                            if not restored.get(tool, False)}
+            if tools_to_store:
+                store_all(db_path, input_file, tools_to_store)
+            else:
+                LOGGER.info('All outputs were cache hits — skipping redundant storage')
             log_workflow_run(db_path, run_id, input_file, key_name,
                              result['rules_summary'].get('completed', 0), status='success')
 
@@ -387,6 +395,8 @@ class WorkflowBase(ProgramBase):
         out_cog_count = f"{prefix}cog/cog_count.tsv"
         out_cog_db = f"{prefix}cog/{stem}-cog_db.tkn"
         cog_outdir = f"{prefix}cog"
+        out_kofam = f"{prefix}kofam/{stem}-kofam.tkn"
+        out_kofam_db = f"{prefix}kofam/{stem}-kofam_db.tkn"
 
         smk_config = {
             'input_fasta': input_file,
@@ -400,8 +410,9 @@ class WorkflowBase(ProgramBase):
             'out_cog_count': out_cog_count,
             'out_cog_db': out_cog_db,
             'cog_outdir': cog_outdir,
-            'out_dbcan': f"{stem}-dbcan.tkn",
-            'out_kofam': f"{stem}-kofam.tkn",
+            # 'out_dbcan': f"{stem}-dbcan.tkn",
+            'out_kofam': out_kofam,
+            'out_kofam_db': out_kofam_db,
             'main_database': main_database,
             # Hierarchical tool configs - pass entire sections to snakemake
             'prodigal': self.conf.get('prodigal', {}),
@@ -418,6 +429,8 @@ class WorkflowBase(ProgramBase):
             'pfam_db': [out_pfam_db],
             'cog': [out_cog, out_cog_classify, out_cog_count],
             'cog_db': [out_cog_db],
+            'kofam': [out_kofam],
+            'kofam_db': [out_kofam_db],
         }
 
         self._run_pipeline('margie', smk_config, cache_map, mode=mode, compute_config=compute_config)
