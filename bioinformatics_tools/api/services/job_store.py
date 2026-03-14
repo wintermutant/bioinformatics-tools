@@ -77,6 +77,13 @@ class JobStore:
         job = self._jobs.get(job_id)
         return job.get("status") if job else None
 
+    def cancel(self, job_id: str) -> None:
+        """Mark a job as cancelled."""
+        if job_id in self._jobs:
+            self._jobs[job_id]["status"] = "cancelled"
+            self._jobs[job_id]["phase"] = "Cancelled by user"
+            LOGGER.info("Cancelled job %s", job_id)
+
 
 # Module-level singleton
 job_store = JobStore()
