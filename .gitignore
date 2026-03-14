@@ -5,6 +5,7 @@ uv.lock
 
 # Testing and mock
 *_mock*/
+data/
 
 # AI / Claude
 settings.local.json
@@ -52,3 +53,7 @@ MANIFEST
 
 # Environment secrets
 .env
+
+# Kubernetes secrets (never commit these!)
+k8s/**/secret.yaml
+k8s/**/*-secret.yaml
