@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bsp-api
+spec:
+  replicas: 1  # IMPORTANT: SQLite only supports 1 replica (single writer)
+  selector:
+    matchLabels:
+      app: bsp-api
+  template:
+    metadata:
+      labels:
+        app: bsp-api
+    spec:
+      containers:
+        - name: bsp-api
+          image: wintermutant/bsp-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENV
+              value: "production"
+            # Database path (points to persistent volume)
+            - name: BSP_DB_PATH
+              value: "/data/bsp.db"
+            # REQUIRED: Secret key for JWT signing
+            - name: BSP_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bsp-secrets
+                  key: secret-key
+            # REQUIRED: Encryption key for sensitive data
+            - name: BSP_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bsp-secrets
+                  key: encryption-key
+          volumeMounts:
+            - name: bsp-data
+              mountPath: /data  # Mount persistent storage here
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: bsp-data
+          persistentVolumeClaim:
+            claimName: bsp-db-pvc

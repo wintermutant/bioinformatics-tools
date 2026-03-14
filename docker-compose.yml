@@ -1,0 +1,42 @@
+
+services:
+  # Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bsp-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.test  # Load environment variables from this file
+    environment:
+      - ENV=production
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - margie-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ../margie-fe/margie-fe
+      dockerfile: Dockerfile
+      args:
+        # Tell frontend to call backend at localhost:8000
+        # This is baked into the build at compile time
+        VITE_PUBLIC_API_URL: "http://localhost:8000"
+    container_name: bsp-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - margie-network
+
+networks:
+  margie-network:
+    driver: bridge

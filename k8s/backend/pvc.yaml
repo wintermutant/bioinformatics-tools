@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bsp-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce  # Only one pod can mount this at a time (important for SQLite)
+  resources:
+    requests:
+      storage: 5Gi  # Adjust size as needed
+  storageClassName: anvil-block  # Anvil's default Rook Ceph block storage
