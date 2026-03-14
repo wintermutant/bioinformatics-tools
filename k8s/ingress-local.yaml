@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bsp-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # API calls go to backend (must be first for priority)
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: bsp-api-svc
+                port:
+                  number: 8000
+          # Everything else goes to frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bsp-frontend-svc
+                port:
+                  number: 3000
