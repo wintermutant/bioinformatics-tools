@@ -73,6 +73,9 @@ def restore(db_path: str, input_file: str, tool_name: str,
     cached = {fname: blob for fname, blob in rows}
 
     if not expected.issubset(cached.keys()):
+        missing = expected - cached.keys()
+        LOGGER.info("Cache miss for %s: expected %s, found %s, missing %s",
+                   tool_name, expected, set(cached.keys()), missing)
         return False
 
     # Write BLOBs to the expected output paths
@@ -106,6 +109,10 @@ def store(db_path: str, input_file: str, tool_name: str,
             if not p.exists():
                 LOGGER.debug("Skipping cache store for missing file: %s", path)
                 continue
+            file_size = p.stat().st_size
+            size_mb = file_size / (1024 * 1024)
+            if size_mb > 1:
+                LOGGER.info("  Reading %s (%.1f MB)...", p.name, size_mb)
             blob = p.read_bytes()
             conn.execute(
                 "INSERT OR REPLACE INTO output_cache "
@@ -113,6 +120,8 @@ def store(db_path: str, input_file: str, tool_name: str,
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (input_hash, tool_name, p.name, blob, len(blob), now),
             )
+            if size_mb > 1:
+                LOGGER.info("  ✓ Stored %s", p.name)
         conn.commit()
     finally:
         conn.close()
@@ -141,9 +150,12 @@ def restore_all(db_path: str, input_file: str,
 def store_all(db_path: str, input_file: str,
               tool_outputs_map: dict[str, list[str]]) -> None:
     """Store outputs for every tool in *tool_outputs_map* into the DB."""
-    for tool_name, output_paths in tool_outputs_map.items():
+    total_tools = len(tool_outputs_map)
+    LOGGER.info("Storing outputs to cache for %d tools...", total_tools)
+    for idx, (tool_name, output_paths) in enumerate(tool_outputs_map.items(), 1):
+        LOGGER.info("Caching %s (%d/%d)...", tool_name, idx, total_tools)
         store(db_path, input_file, tool_name, output_paths)
-        LOGGER.info("Cached outputs for %s", tool_name)
+        LOGGER.info("✓ Cached outputs for %s", tool_name)
 
 
 CREATE_RUN_LOG_SQL = """

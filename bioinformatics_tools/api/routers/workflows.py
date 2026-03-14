@@ -36,7 +36,7 @@ async def run_quick_example(current_user: dict = Depends(get_current_user)):
     job_id = str(uuid.uuid4())
     job_store.create(job_id, "quick_example (selftest)", user_id=current_user["user_id"])
 
-    command = "uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf quick example"
+    command = "echo 'Installing bioinformatics-tools repository...' && UV_NO_PROGRESS=1 NO_COLOR=1 uvx --from ~/bioinformatics-tools/ --force-reinstall --quiet dane_wf quick example"
     job_runner.submit_job(job_id, command, connection=conn)
 
     return {"success": True, "job_id": job_id, "message": "quick_example submitted"}
@@ -49,7 +49,7 @@ async def run_fresh_test(current_user: dict = Depends(get_current_user)):
     job_id = str(uuid.uuid4())
     job_store.create(job_id, "fresh_test (selftest)", user_id=current_user["user_id"])
 
-    command = "uvx --from ~/bioinformatics-tools/ --force-reinstall dane_wf fresh test"
+    command = "echo 'Installing bioinformatics-tools repository...' && UV_NO_PROGRESS=1 NO_COLOR=1 uvx --from ~/bioinformatics-tools/ --force-reinstall --quiet dane_wf fresh test"
     job_runner.submit_job(job_id, command, connection=conn)
 
     return {"success": True, "job_id": job_id, "message": "fresh_test submitted"}
