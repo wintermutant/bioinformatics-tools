@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bsp-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: bsp-frontend
+  template:
+    metadata:
+      labels:
+        app: bsp-frontend
+    spec:
+      containers:
+        - name: bsp-frontend
+          # IMPORTANT: Build this image with --build-arg VITE_PUBLIC_API_URL=""
+          # This tells the frontend to use relative paths that the ingress will route
+          image: wintermutant/bsp-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            - name: ORIGIN
+              value: "https://bsp.anvilcloud.rcac.purdue.edu"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
