@@ -189,6 +189,23 @@ def load_gff_to_db(gff_path: str, db_path: str, source_tool: str) -> int:
 
 def _infer_type(value: str) -> str:
     """Guess SQLite column type from a sample value."""
+    # If value contains a comma, it's likely a list - treat as TEXT
+    if ',' in value:
+        return "TEXT"
+    # If value contains special characters or ranges, treat as TEXT
+    if any(c in value for c in ['-', '_', '/', ':', ';', ' ']):
+        # Exception: negative numbers
+        if value.startswith('-'):
+            try:
+                int(value)
+                return "INTEGER"
+            except ValueError:
+                try:
+                    float(value)
+                    return "REAL"
+                except ValueError:
+                    return "TEXT"
+        return "TEXT"
     try:
         int(value)
         return "INTEGER"
@@ -207,7 +224,7 @@ def load_csv_to_db(csv_path: str, db_path: str, table_name: str,
     """Load a delimited file with headers into a table named `table_name`.
 
     - Creates the table from headers if it doesn't exist.
-    - Infers column types (INTEGER/REAL/TEXT) from the first data row.
+    - Infers column types (INTEGER/REAL/TEXT) from sample rows.
     - Adds an autoincrement `id` primary key.
     """
     with open(csv_path, newline="") as fh:
@@ -218,8 +235,24 @@ def load_csv_to_db(csv_path: str, db_path: str, table_name: str,
     if not data_rows:
         return 0
 
-    # Infer types from the first row
-    col_types = [_infer_type(val) for val in data_rows[0]]
+    # Infer types from multiple sample rows (up to first 10) for better accuracy
+    sample_size = min(10, len(data_rows))
+    col_types = []
+    for col_idx in range(len(headers)):
+        # Check all sample values for this column
+        inferred = "INTEGER"
+        for row_idx in range(sample_size):
+            if col_idx < len(data_rows[row_idx]):
+                val = data_rows[row_idx][col_idx].strip()
+                if val:  # Skip empty values
+                    col_type = _infer_type(val)
+                    # Use most permissive type seen: TEXT > REAL > INTEGER
+                    if col_type == "TEXT":
+                        inferred = "TEXT"
+                        break
+                    elif col_type == "REAL" and inferred == "INTEGER":
+                        inferred = "REAL"
+        col_types.append(inferred)
 
     quoted_headers = [f'"{h}"' for h in headers]
     col_defs = ",\n    ".join(
