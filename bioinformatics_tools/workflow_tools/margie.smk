@@ -5,35 +5,44 @@ import os
 
 WORKFLOW_DIR = os.path.dirname(workflow.snakefile)
 
-def rc(rule_name, param, default=None):
+def rc(rule_name, param=None, default=None):
     """
     Rule Config: Get config value for a specific rule's parameter.
 
-    Hierarchical config pattern: rule run_<tool> reads from config key <tool>:
+    Supports both nested and top-level config patterns:
 
-    Example:
-        rule run_prodigal reads from config:
-            prodigal:
-              threads: 1
-              mem_mb: 2048
-              runtime: 30
+    Example configs:
+        # Nested (for tool parameters)
+        prodigal:
+          threads: 1
+          mem_mb: 2048
+
+        # Top-level (for simple values)
+        mykey: value
 
     Usage in rules:
-        threads: rc('prodigal', 'threads', 1)
-        resources: mem_mb=rc('prodigal', 'mem_mb', 2048)
+        threads: rc('prodigal', 'threads', 1)   # nested lookup
+        value: rc('mykey', default='fallback')  # top-level lookup
 
     Args:
-        rule_name: The tool name (matches config key after run_, e.g., 'prodigal')
-        param: Parameter name (e.g., 'threads', 'mem_mb', 'runtime')
+        rule_name: The tool name or config key
+        param: Parameter name (optional, for nested configs)
         default: Default value if not found in config
 
     Returns:
         The config value or default if not set
     """
-    # Access workflow.config instead of config for reliable scoping
-    rule_config = workflow.config.get(rule_name, {})
+    config = workflow.config
+
+    # If param is None, lookup rule_name as a top-level key
+    if param is None:
+        return config.get(rule_name, default)
+
+    # Try nested lookup: config[rule_name][param]
+    rule_config = config.get(rule_name, {})
     if isinstance(rule_config, dict):
         return rule_config.get(param, default)
+
     return default
 
 rule all:
@@ -43,8 +52,7 @@ rule all:
         config.get('out_cog_db', 'cog_db.tkn'),
         config.get('out_kofam_db'),
         config.get('out_uniop_db'),
-        # config.get('out_dbcan'),
-        # config.get('out_pfam')
+        config.get('out_dbcan_db')
 
 
 rule run_prodigal:
@@ -134,7 +142,7 @@ rule run_cog:
         mem_mb=rc('cog', 'mem_mb', 8192),
         runtime=rc('cog', 'runtime', 120)
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
-    shell:
+    shell:  # TODO: Remove this copy command
         """
         LOCAL_DB=$TMPDIR/cog_db
         cp -r {params.db} "$LOCAL_DB"
@@ -197,22 +205,6 @@ rule load_kofam_to_db:
         """
 
 
-rule run_example:
-    input:
-        faa=config.get('out_prodigal_faa'),
-        fasta=config.get('input_fasta'),
-        kofam=config.get('out_kofam', 'kofam/kofam.tkn')
-    params:
-        tcu_option=rc('hmmer', 'tcu', False),
-        db=rc('hmmer', 'db', '/margie/db/hmmmer.db')
-    container: '~/.cache/pfam_scan_light_dane.sif'
-    shell:
-        """
-        hmmer -tcu {params.tcu_option} -option1 -option2
-        """
-
-
-
 rule run_uniop:
     """Operon prediction using operon_exec"""
     input:
@@ -251,21 +243,41 @@ rule load_uniop_to_db:
 
 
 rule run_dbcan:
+    """dbCAN - CAZyme annotation and CGC prediction"""
     input:
-        config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
+        fasta=rc('input_fasta')
     output:
-        tkn = config.get('out_dbcan', '/depot/lindems/data/Database/example-output/small-dbcan.out')
+        overview=rc('out_dbcan', 'dbcan/overview.txt')
+    group: "dbcan"
     threads: rc('dbcan', 'threads', 4)
     resources:
         mem_mb=rc('dbcan', 'mem_mb', 7984),
         runtime=rc('dbcan', 'runtime', 180)
     params:
+        output_dir=rc('dbcan', 'output_dir', 'dbcan'),
         db=rc('dbcan', 'db', "/depot/lindems/data/Databases/cazyme/db")
     container: "~/.cache/bioinformatics-tools/run_dbcan_light.sif"
     shell:
         """
-        run_dbcan easy_CGC -v --mode prok --output_dir . --input_raw_data {input} --threads {threads} \
-        --prokaryotic --db_dir {params.db} && touch {output}
+        run_dbcan easy_CGC -v --mode prok --output_dir {params.output_dir} \
+        --input_raw_data {input.fasta} --threads {threads} \
+        --prokaryotic --db_dir {params.db}
+        """
+
+
+rule load_dbcan_to_db:
+    """Load dbCAN overview results into SQLite database"""
+    input:
+        overview=rc('out_dbcan', 'dbcan/overview.txt')
+    output:
+        tkn=rc('out_dbcan_db', 'dbcan/dbcan_db.tkn')
+    group: "dbcan"
+    params:
+        db=config['main_database'],  # Required - no fallback
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} tsv {input.overview} {params.db} dbcan --token {output.tkn}
         """
 
 

@@ -60,7 +60,7 @@ class WorkflowBase(ProgramBase):
             '--keep-going',
             '--use-apptainer',
             '--sdm=apptainer',
-            '--apptainer-args', '-B /home/ddeemer -B /depot/lindems/data/Databases/',
+            '--apptainer-args', '-B /home/ddeemer -B /depot/lindems/data/Databases/',  #TODO: HARDCODED!
             f'--jobs={max_jobs}',
             '--latency-wait=60'
         ]
@@ -399,6 +399,8 @@ class WorkflowBase(ProgramBase):
         out_kofam_db = f"{prefix}kofam/{stem}-kofam_db.tkn"
         out_uniop = f"{prefix}uniop/operons.tsv"
         out_uniop_db = f"{prefix}uniop/uniop_db.tkn"
+        out_dbcan = f"{prefix}dbcan/overview.txt"
+        out_dbcan_db = f"{prefix}dbcan/dbcan_db.tkn"
 
         smk_config = {
             'input_fasta': input_file,
@@ -414,7 +416,8 @@ class WorkflowBase(ProgramBase):
             'cog_outdir': cog_outdir,
             'out_uniop': out_uniop,
             'out_uniop_db': out_uniop_db,
-            # 'out_dbcan': f"{stem}-dbcan.tkn",
+            'out_dbcan': out_dbcan,
+            'out_dbcan_db': out_dbcan_db,
             'out_kofam': out_kofam,
             'out_kofam_db': out_kofam_db,
             'main_database': main_database,
@@ -438,6 +441,8 @@ class WorkflowBase(ProgramBase):
             'kofam_db': [out_kofam_db],
             'uniop': [out_uniop],
             'uniop_db': [out_uniop_db],
+            'dbcan': [out_dbcan],
+            'dbcan_db': [out_dbcan_db],
         }
 
         self._run_pipeline('margie', smk_config, cache_map, mode=mode, compute_config=compute_config)

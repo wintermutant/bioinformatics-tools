@@ -66,7 +66,8 @@ WORKFLOWS: dict[str, WorkflowKey] = {
             ('pfam_scan_light', 'latest'),
             ('cogclassifier', 'latest'),
             ('kofam_scan_light_bsp', 'latest'),
-            ('opr-dev', '1.13')
+            ('opr-dev', '1.13'),
+            ('run_dbcan_light', '4.2.0')
         ],
         label='Margie',
         description='Full annotation pipeline (Prodigal, Pfam, COG)',
@@ -184,6 +185,37 @@ WORKFLOWS: dict[str, WorkflowKey] = {
                 'param': 'cog.outdir',
                 'default': 'cog',
                 'description': 'Output directory for COG results',
+                'type': 'string'
+            },
+            # dbCAN configuration (rule run_dbcan)
+            {
+                'param': 'dbcan.threads',
+                'default': 4,
+                'description': 'Number of threads for dbCAN',
+                'type': 'int'
+            },
+            {
+                'param': 'dbcan.mem_mb',
+                'default': 7984,
+                'description': 'Memory limit in MB for dbCAN',
+                'type': 'int'
+            },
+            {
+                'param': 'dbcan.runtime',
+                'default': 180,
+                'description': 'Runtime limit in minutes for dbCAN',
+                'type': 'int'
+            },
+            {
+                'param': 'dbcan.db',
+                'default': '/depot/lindems/data/Databases/cazyme/db',
+                'description': 'Path to dbCAN database directory',
+                'type': 'path'
+            },
+            {
+                'param': 'dbcan.output_dir',
+                'default': 'dbcan',
+                'description': 'Output directory for dbCAN results',
                 'type': 'string'
             }
         ],
