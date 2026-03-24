@@ -175,7 +175,7 @@ def get_verified_sif_file(sif_name: str, sif_version: str):
     # sif_path = [(prodigal, 2.6.3), (program, version)]
     sif_path = Path(sif_name)
     LOGGER.info('SIF path: %s Version: %s', sif_path, sif_version)
-    docker_url = f'docker://ghcr.io/wintermutant/{sif_path}:{sif_version}'
+    docker_url = f'docker://ghcr.io/wintermutant/{sif_path}:{sif_version}'  # TODO: Add a list of container repos
 
     if cached := get_cached_file(sif_path):
         _emit_container_metadata(sif_name, sif_version, str(cached), "cached", docker_url)

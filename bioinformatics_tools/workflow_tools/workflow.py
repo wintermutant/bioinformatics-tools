@@ -397,6 +397,8 @@ class WorkflowBase(ProgramBase):
         cog_outdir = f"{prefix}cog"
         out_kofam = f"{prefix}kofam/{stem}-kofam.tkn"
         out_kofam_db = f"{prefix}kofam/{stem}-kofam_db.tkn"
+        out_uniop = f"{prefix}uniop/operons.tsv"
+        out_uniop_db = f"{prefix}uniop/uniop_db.tkn"
 
         smk_config = {
             'input_fasta': input_file,
@@ -410,6 +412,8 @@ class WorkflowBase(ProgramBase):
             'out_cog_count': out_cog_count,
             'out_cog_db': out_cog_db,
             'cog_outdir': cog_outdir,
+            'out_uniop': out_uniop,
+            'out_uniop_db': out_uniop_db,
             # 'out_dbcan': f"{stem}-dbcan.tkn",
             'out_kofam': out_kofam,
             'out_kofam_db': out_kofam_db,
@@ -420,6 +424,7 @@ class WorkflowBase(ProgramBase):
             'cog': self.conf.get('cog', {}),
             'dbcan': self.conf.get('dbcan', {}),
             'kofam': self.conf.get('kofam', {}),
+            'uniop': self.conf.get('uniop', {}),
         }
 
         cache_map = {
@@ -431,6 +436,8 @@ class WorkflowBase(ProgramBase):
             'cog_db': [out_cog_db],
             'kofam': [out_kofam],
             'kofam_db': [out_kofam_db],
+            'uniop': [out_uniop],
+            'uniop_db': [out_uniop_db],
         }
 
         self._run_pipeline('margie', smk_config, cache_map, mode=mode, compute_config=compute_config)

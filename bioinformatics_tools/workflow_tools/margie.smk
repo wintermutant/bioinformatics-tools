@@ -42,17 +42,17 @@ rule all:
         config.get('out_pfam_db', 'pfam_db.tkn'),
         config.get('out_cog_db', 'cog_db.tkn'),
         config.get('out_kofam_db'),
+        config.get('out_uniop_db'),
         # config.get('out_dbcan'),
         # config.get('out_pfam')
-
 
 
 rule run_prodigal:
     """prodigal"""
     input:
-        config.get('input_fasta', '/home/ddeemer/smallish.fasta')  # change input_fasta to input for sake of paper
+        config.get('input_fasta')
     output:
-        gff=config.get('out_prodigal', 'prodigal/prodigal.tkn'),
+        gff=config.get('out_prodigal_gff', 'prodigal/prodigal.tkn'),
         faa=config.get('out_prodigal_faa', 'prodigal/prodigal.faa')
     group: "prodigal"
     threads: rc('prodigal', 'threads', 1)
@@ -161,6 +161,95 @@ rule load_cog_to_db:
         """
 
 
+rule run_kofam:
+    input:
+        faa=config.get('out_prodigal_faa')
+    output:
+        results=config.get('out_kofam', 'kofam/kofam.tkn')
+    container: "~/.cache/bioinformatics-tools/kofam_scan_light_bsp.sif"
+    threads: rc('kofam', 'threads', 16)
+    resources:
+        mem_mb=rc('kofam', 'mem_mb', 4000),
+        runtime=rc('kofam', 'runtime', 180)
+    group: "kofam"
+    params:
+        profile_db=rc('kofam', 'profile_db', "/depot/lindems/data/Databases/kofams/profiles"),
+        ko_list=rc('kofam', 'ko_list', "/depot/lindems/data/Databases/kofams/ko_list")
+    shell:
+        """
+        exec_annotation {input.faa} -o {output.results} --profile {params.profile_db} --ko-list {params.ko_list} \
+        --cpu {threads} --format detail-tsv
+        """
+
+rule load_kofam_to_db:
+    """Load KOFam_Scan output into SQLite database"""
+    input:
+        results=config.get('out_kofam'),
+    output:
+        tkn=config.get('out_kofam_db', 'kofam/kofam_db.tkn')
+    group: "kofam"
+    params:
+        db=config['main_database'],  # Required - no fallback
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} tsv {input.results} {params.db} kofam_scan --token {output.tkn}
+        """
+
+
+rule run_example:
+    input:
+        faa=config.get('out_prodigal_faa'),
+        fasta=config.get('input_fasta'),
+        kofam=config.get('out_kofam', 'kofam/kofam.tkn')
+    params:
+        tcu_option=rc('hmmer', 'tcu', False),
+        db=rc('hmmer', 'db', '/margie/db/hmmmer.db')
+    container: '~/.cache/pfam_scan_light_dane.sif'
+    shell:
+        """
+        hmmer -tcu {params.tcu_option} -option1 -option2
+        """
+
+
+
+rule run_uniop:
+    """Operon prediction using operon_exec"""
+    input:
+        faa=config.get('out_prodigal_faa')
+    output:
+        operons=config.get('out_uniop', 'uniop/operons.tsv')
+    group: "uniop"
+    threads: rc('uniop', 'threads', 4)
+    resources:
+        mem_mb=rc('uniop', 'mem_mb', 4000),
+        runtime=rc('uniop', 'runtime', 120)
+    params:
+        output_dir=rc('uniop', 'output_dir', 'uniop')
+    container: "~/.cache/bioinformatics-tools/opr-dev.sif"
+    shell:
+        """
+        operon_exec -i {input.faa} -o {params.output_dir}
+        find {params.output_dir} -name "operons.tsv" -exec cp {{}} {output.operons} \;
+        """
+
+
+rule load_uniop_to_db:
+    """Load operon prediction results into SQLite database"""
+    input:
+        operons=config.get('out_uniop', 'uniop/operons.tsv')
+    output:
+        tkn=config.get('out_uniop_db', 'uniop/uniop_db.tkn')
+    group: "uniop"
+    params:
+        db=config['main_database'],  # Required - no fallback
+        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+    shell:
+        """
+        python {params.script} tsv {input.operons} {params.db} uniop --token {output.tkn}
+        """
+
+
 rule run_dbcan:
     input:
         config.get('input_fasta', '/depot/lindems/data/Database/example-data/small.fasta')
@@ -177,43 +266,6 @@ rule run_dbcan:
         """
         run_dbcan easy_CGC -v --mode prok --output_dir . --input_raw_data {input} --threads {threads} \
         --prokaryotic --db_dir {params.db} && touch {output}
-        """
-
-
-rule run_kofam:
-    input:
-        faa=config.get('out_prodigal_faa')
-    output:
-        config.get('out_kofam', 'kofam/kofam.tkn')
-    container: "~/.cache/bioinformatics-tools/kofam_scan_light_bsp.sif"
-    threads: rc('kofam', 'threads', 16)
-    resources:
-        mem_mb=rc('kofam', 'mem_mb', 4000),
-        runtime=rc('kofam', 'runtime', 180)
-    group: "kofam"
-    params:
-        profile_db=rc('kofam', 'profile_db', "/depot/lindems/data/Databases/kofams/profiles"),
-        ko_list=rc('kofam', 'ko_list', "/depot/lindems/data/Databases/kofams/ko_list")
-    shell:
-        """
-        exec_annotation {input} -o {output} --profile {params.profile_db} --ko-list {params.ko_list} \
-        --cpu {threads} --format detail-tsv
-        """
-
-
-rule load_kofam_to_db:
-    """Load KOFam_Scan output into SQLite database"""
-    input:
-        results=config.get('out_kofam'),
-    output:
-        tkn=config.get('out_kofam_db', 'kofam/kofam_db.tkn')
-    group: "kofam"
-    params:
-        db=config['main_database'],  # Required - no fallback
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
-    shell:
-        """
-        python {params.script} tsv {input.results} {params.db} kofam_scan --token {output.tkn}
         """
 
 
@@ -235,17 +287,17 @@ rule run_merops:
 rule run_tigr:
     '''TODO: INCOMPLETE'''
     input:
-        "{sample}.faa"
+        faa=config.get('out_prodigal_faa')
     output:
-        one="Annotations/TigrFamResults/{sample}.hmmer.TIGR.hmm",
-        two="Annotations/TigrFamResults/{sample}.hmmer.TIGR.tbl"
+        hmm="Annotations/TigrFamResults/{sample}.hmmer.TIGR.hmm",
+        tbl="Annotations/TigrFamResults/{sample}.hmmer.TIGR.tbl"
     params:
         db="/depot/lindems/data/Databases/tigrfams/hmm_PGAP.LIB"
     container: "~/.cache/bioinformatics-tools/hmmer.sif"
     threads: 4
     shell:
         """
-        hmmscan -o {output.one} --tblout {output.two} --cpu {threads} {params.db} {input}
+        hmmscan -o {output.hmm} --tblout {output.tbl} --cpu {threads} {params.db} {input}
         """
 
 

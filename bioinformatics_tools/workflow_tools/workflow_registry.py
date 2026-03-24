@@ -66,6 +66,7 @@ WORKFLOWS: dict[str, WorkflowKey] = {
             ('pfam_scan_light', 'latest'),
             ('cogclassifier', 'latest'),
             ('kofam_scan_light_bsp', 'latest'),
+            ('opr-dev', '1.13')
         ],
         label='Margie',
         description='Full annotation pipeline (Prodigal, Pfam, COG)',
@@ -88,6 +89,18 @@ WORKFLOWS: dict[str, WorkflowKey] = {
                 'purpose': 'Functional categorization using COG database',
                 'version': 'latest',
                 'output': 'TSV files with COG classifications and category counts'
+            },
+            {
+                'name': 'Kegg',
+                'purpose': 'TODO',
+                'version': 'latest',
+                'output': 'kegg.tkn # TODO'
+            },
+            {
+                'name': 'UniOp',
+                'purpose': 'TODO',
+                'version': 'latest',
+                'output': '# TODO'
             }
         ],
         configurable_params=[
@@ -134,6 +147,13 @@ WORKFLOWS: dict[str, WorkflowKey] = {
                 'default': '/depot/lindems/data/Databases/pfam',
                 'description': 'Path to Pfam-A HMM database',
                 'type': 'path'
+            },
+            # UniOp configuration (rule run_uniop)
+            {
+                'param': 'uniop.output_dir',
+                'default': 'uniop',
+                'description': 'Output directory for uniop - requires a directory, not file',
+                'type': 'str'
             },
             # COG configuration (rule run_cog)
             {
