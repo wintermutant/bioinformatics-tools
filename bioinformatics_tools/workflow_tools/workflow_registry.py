@@ -102,6 +102,12 @@ WORKFLOWS: dict[str, WorkflowKey] = {
                 'purpose': 'TODO',
                 'version': 'latest',
                 'output': '# TODO'
+            },
+            {
+                'name': 'run_dbCAN',
+                'purpose': 'TODO',
+                'version': 'latest',
+                'output': '# TODO'
             }
         ],
         configurable_params=[

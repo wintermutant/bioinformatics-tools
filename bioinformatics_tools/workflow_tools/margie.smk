@@ -32,7 +32,8 @@ def rc(rule_name, param=None, default=None):
     Returns:
         The config value or default if not set
     """
-    config = workflow.config
+    # Use global config (available in all Snakemake files)
+    # This is more reliable than workflow.config during rule definition
 
     # If param is None, lookup rule_name as a top-level key
     if param is None:
@@ -50,9 +51,9 @@ rule all:
         config.get('out_prodigal_db', 'prodigal_db.tkn'),
         config.get('out_pfam_db', 'pfam_db.tkn'),
         config.get('out_cog_db', 'cog_db.tkn'),
-        config.get('out_kofam_db'),
-        config.get('out_uniop_db'),
-        config.get('out_dbcan_db')
+        config.get('out_kofam_db', 'kofam/kofam_db.tkn'),
+        config.get('out_uniop_db', 'uniop/uniop_db.tkn'),
+        config.get('out_dbcan_db', 'dbcan/dbcan_db.tkn')
 
 
 rule run_prodigal:
@@ -247,7 +248,7 @@ rule run_dbcan:
     input:
         fasta=rc('input_fasta')
     output:
-        overview=rc('out_dbcan', 'dbcan/overview.txt')
+        overview=config.get('out_dbcan', 'dbcan/overview.tsv')
     group: "dbcan"
     threads: rc('dbcan', 'threads', 4)
     resources:
@@ -268,9 +269,9 @@ rule run_dbcan:
 rule load_dbcan_to_db:
     """Load dbCAN overview results into SQLite database"""
     input:
-        overview=rc('out_dbcan', 'dbcan/overview.txt')
+        overview=config.get('out_dbcan', 'dbcan/overview.tsv')
     output:
-        tkn=rc('out_dbcan_db', 'dbcan/dbcan_db.tkn')
+        tkn=config.get('out_dbcan_db', 'dbcan/dbcan_db.tkn')
     group: "dbcan"
     params:
         db=config['main_database'],  # Required - no fallback
@@ -280,131 +281,12 @@ rule load_dbcan_to_db:
         python {params.script} tsv {input.overview} {params.db} dbcan --token {output.tkn}
         """
 
-
-rule run_merops:
-    '''TODO: INCOMPLETE'''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    params:
-        db="/depot/lindems/data/Databases/merops/merops.dmnd"
-    container: "~/.cache/bioinformatics-tools/diamond.sif"
-    shell:
-        """
-        diamond blastx -d {db} -q {input.fasta} -o {output}
-        """
-
-
-rule run_tigr:
-    '''TODO: INCOMPLETE'''
-    input:
-        faa=config.get('out_prodigal_faa')
-    output:
-        hmm="Annotations/TigrFamResults/{sample}.hmmer.TIGR.hmm",
-        tbl="Annotations/TigrFamResults/{sample}.hmmer.TIGR.tbl"
-    params:
-        db="/depot/lindems/data/Databases/tigrfams/hmm_PGAP.LIB"
-    container: "~/.cache/bioinformatics-tools/hmmer.sif"
-    threads: 4
-    shell:
-        """
-        hmmscan -o {output.hmm} --tblout {output.tbl} --cpu {threads} {params.db} {input}
-        """
-
-
-rule run_uniport:
-    '''TODO: INCOMPLETE'''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    params:
-        db="/depot/lindems/data/Databases/uniref/uniref90"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
-        """
-
-rule term_predict:
-    '''TODO: INCOMPLETE'''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
-        """
-
-rule run_rast:
-    '''TODO: INCOMPLETE'''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
-        """
-
-
-rule run_tcdb:
-    '''TODO: INCOMPLETE'''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
-        """
-
-
-rule run_promotech:
-    '''
-    TODO: INCOMPLETE
-    Promoter prediction in bacterial genomes
-    https://github.com/BioinformaticsLabAtMUN/Promotech
-    '''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
-        """
-
-
-rule run_template:
-    '''TODO: INCOMPLETE'''
-    input:
-        "{sample}.fasta"
-    output:
-        "{sample}.out"
-    # container: "~/.cache/"
-    shell:
-        """
-        touch {output}
-        """
-
-
-rule finalize:
-    """Create done file from prodigal output"""
-    input:
-        config.get('output_fasta', 'poopydiapy.out')
-    output:
-        "results/done.txt"
-    shell:
-        """
-        mkdir -p results
-        echo "Workflow completed! Input processed: {input}" > {output}
-        cat {input} >> {output}
-        """
-
+# Rules to add
+# rule run_merops:
+# rule run_tigr:
+# rule run_uniport:
+# rule term_predict:
+# rule run_rast:
+# rule run_tcdb:
+# rule run_promotech:
+# rule finalize:

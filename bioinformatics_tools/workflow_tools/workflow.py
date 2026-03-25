@@ -399,7 +399,7 @@ class WorkflowBase(ProgramBase):
         out_kofam_db = f"{prefix}kofam/{stem}-kofam_db.tkn"
         out_uniop = f"{prefix}uniop/operons.tsv"
         out_uniop_db = f"{prefix}uniop/uniop_db.tkn"
-        out_dbcan = f"{prefix}dbcan/overview.txt"
+        out_dbcan = f"{prefix}dbcan/overview.tsv"
         out_dbcan_db = f"{prefix}dbcan/dbcan_db.tkn"
 
         smk_config = {
