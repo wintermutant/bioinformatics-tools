@@ -157,7 +157,11 @@ class App:
         if not config_files:
             LOGGER.warning('No configuration files found!')
             self.conf = nuconf  # Return BLANK config
+            self.config_paths = []  # Store empty list
             return
+
+        # Store config file paths for later use (e.g., passing to Snakemake)
+        self.config_paths = config_files
 
         for conf in config_files:
             try:
