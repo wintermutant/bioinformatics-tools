@@ -482,6 +482,24 @@ class CxNode(object):
                 d[str(k.head)] = self[k.head].toJDN()
         return d
 
+    def to_nested_dict(self):
+        """
+        Convert CxNode to a proper nested Python dictionary.
+
+        Unlike .flattened which creates flat keys with dots (e.g., 'compute.cluster_default.account'),
+        this returns a proper nested dict structure: {'compute': {'cluster_default': {'account': ...}}}
+
+        Returns:
+            dict: Nested dictionary representation of the configuration
+        """
+        result = {}
+        for k, v in self.children.items():
+            if isinstance(v, CxNode):
+                result[k] = v.to_nested_dict()  # Recursive for nested CxNodes
+            else:
+                result[k] = v
+        return result
+
 
 def Condex(*args, **kwargs):
     c = CxNode()
