@@ -12,6 +12,7 @@ with it — no separate cache directory needed.
 import hashlib
 import logging
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,6 +30,67 @@ CREATE TABLE IF NOT EXISTS output_cache (
     UNIQUE(input_hash, tool, filename)
 );
 """
+
+
+def _get_connection(db_path: str, timeout: float = 30.0) -> sqlite3.Connection:
+    """Create a SQLite connection configured for network filesystems.
+
+    Args:
+        db_path: Path to the SQLite database file
+        timeout: Connection timeout in seconds (default 30s for NFS)
+
+    Returns:
+        Configured sqlite3.Connection with increased timeout and busy handler
+    """
+    conn = sqlite3.connect(db_path, timeout=timeout)
+
+    # Set busy timeout (milliseconds) - wait up to 30s for locks
+    # This is critical for NFS where lock operations are slow
+    conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
+
+    return conn
+
+
+def _retry_operation(func, max_retries: int = 3, initial_delay: float = 0.5):
+    """Retry operations that fail with transient disk I/O or lock errors.
+
+    Args:
+        func: Callable to execute
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay between retries (doubles each time)
+
+    Returns:
+        Result of func() if successful
+
+    Raises:
+        sqlite3.OperationalError: If all retries fail
+    """
+    delay = initial_delay
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except sqlite3.OperationalError as e:
+            last_error = e
+            error_str = str(e).lower()
+
+            # Retry on transient errors
+            if any(err in error_str for err in ["disk i/o error", "database is locked", "unable to open"]):
+                if attempt < max_retries - 1:
+                    LOGGER.warning(
+                        "Database operation failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                        attempt + 1, max_retries, e, delay
+                    )
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                else:
+                    LOGGER.error("Database operation failed after %d attempts: %s", max_retries, e)
+            else:
+                # Not a transient error, re-raise immediately
+                raise
+
+    raise last_error
 
 
 def _compute_file_hash(file_path: str) -> str:
@@ -59,7 +121,7 @@ def restore(db_path: str, input_file: str, tool_name: str,
     input_hash = _compute_file_hash(input_file)
     expected = {Path(p).name for p in output_paths}
 
-    conn = sqlite3.connect(db_path)
+    conn = _get_connection(db_path)
     try:
         _ensure_table(conn)
         rows = conn.execute(
@@ -101,7 +163,7 @@ def store(db_path: str, input_file: str, tool_name: str,
     db_path_obj = Path(db_path).expanduser()
     db_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(db_path_obj))
+    conn = _get_connection(str(db_path_obj))
     try:
         _ensure_table(conn)
         for path in output_paths:
@@ -183,25 +245,43 @@ def log_workflow_run(db_path: str, run_id: str, input_file: str, workflow_name: 
     row_count is always 0 here — it is only meaningful for annotation loaders
     (load_to_db.py). rules_completed holds the number of snakemake rules that
     finished in this run.
+
+    This function is non-fatal: any errors are logged as warnings but do not
+    crash the workflow. The workflow run itself has already succeeded/failed.
     """
-    if not Path(db_path).exists():
-        LOGGER.warning("Cannot write run_log: db not found at %s", db_path)
-        return
-
-    input_hash = _compute_file_hash(input_file)
-    now = datetime.now(timezone.utc).isoformat()
-
-    conn = sqlite3.connect(db_path)
     try:
-        conn.execute(CREATE_RUN_LOG_SQL)
-        conn.execute(
-            "INSERT INTO run_log "
-            "(run_id, input_hash, tool, input_path, row_count, rules_completed, status, loaded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (run_id, input_hash, workflow_name, input_file, 0, rules_completed, status, now),
-        )
-        conn.commit()
+        if not Path(db_path).exists():
+            LOGGER.warning("Cannot write run_log: db not found at %s", db_path)
+            return
+
+        input_hash = _compute_file_hash(input_file)
+        now = datetime.now(timezone.utc).isoformat()
+
+        def _log_run():
+            """Inner function for retry wrapper."""
+            conn = _get_connection(db_path, timeout=30.0)
+            try:
+                conn.execute(CREATE_RUN_LOG_SQL)
+                conn.execute(
+                    "INSERT INTO run_log "
+                    "(run_id, input_hash, tool, input_path, row_count, rules_completed, status, loaded_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (run_id, input_hash, workflow_name, input_file, 0, rules_completed, status, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        # Retry on transient I/O errors (NFS, lock contention, etc.)
+        _retry_operation(_log_run, max_retries=3, initial_delay=0.5)
+
         LOGGER.info("Logged workflow run: %s run_id=%s status=%s rules_completed=%d (hash %s...)",
                     workflow_name, run_id, status, rules_completed, input_hash[:12])
-    finally:
-        conn.close()
+
+    except Exception as e:
+        # Non-fatal: log the error but don't crash the workflow
+        LOGGER.warning(
+            "Failed to log workflow run to database (non-fatal): %s. "
+            "Workflow execution was %s, but logging failed.",
+            e, status
+        )
