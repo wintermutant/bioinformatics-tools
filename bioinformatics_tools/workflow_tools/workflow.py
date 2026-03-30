@@ -36,13 +36,13 @@ class WorkflowBase(ProgramBase):
 
         super().__init__()
 
-    def build_executable(self, key: WorkflowKey, config_dict: dict = None, mode='notdev', compute_config: dict = None) -> list[str]:
+    def build_executable(self, key: WorkflowKey, config_overrides: dict = None, mode='notdev', compute_config: dict = None) -> list[str]:
         '''
         Build snakemake command from workflow key and config.
 
         Args:
             key: WorkflowKey defining the workflow
-            config_dict: Snakemake config parameters
+            config_overrides: Only workflow-specific overrides (input_fasta, output_dir, main_database)
             mode: Execution mode ('dev' or other for slurm)
             compute_config: Compute cluster config (account, partition, resources)
         '''
@@ -64,6 +64,12 @@ class WorkflowBase(ProgramBase):
             f'--jobs={max_jobs}',
             '--latency-wait=60'
         ]
+
+        # Check for dry-run/test mode (from config or command line)
+        if self.conf.get('dry_run', False) or self.conf.get('test_only', False):
+            core_command.append('--dry-run')
+            LOGGER.info("Running in DRY-RUN mode - no actual execution")
+
         if mode != 'dev':
             core_command.append('--executor=slurm')
 
@@ -92,9 +98,15 @@ class WorkflowBase(ProgramBase):
             if len(default_resources) > 1:
                 core_command.extend(default_resources)
 
-        # Add config parameters to pass to snakemake
-        if config_dict:
-            config_pairs = [f'{k}={v}' for k, v in config_dict.items()]
+        # Pass original config file(s) to Snakemake to preserve types
+        # This loads the full user config with proper int/bool/nested dict types
+        if hasattr(self, 'config_paths') and self.config_paths:
+            for config_path in self.config_paths:
+                core_command.extend(['--configfile', str(config_path)])
+
+        # Override only workflow-specific values (all strings, so no type issues)
+        if config_overrides:
+            config_pairs = [f'{k}={v}' for k, v in config_overrides.items()]
             core_command.append('--config')
             core_command.extend(config_pairs)
 
@@ -226,7 +238,7 @@ class WorkflowBase(ProgramBase):
             LOGGER.info('Cache restore results: %s', restored)
 
         # Build and run snakemake
-        wf_command = self.build_executable(selected_wf, config_dict=smk_config, mode=mode, compute_config=compute_config)
+        wf_command = self.build_executable(selected_wf, config_overrides=smk_config, mode=mode, compute_config=compute_config)
         LOGGER.info('Running snakemake command: %s', ' '.join(wf_command))
         proc = self._run_subprocess(wf_command)
 
@@ -374,75 +386,51 @@ class WorkflowBase(ProgramBase):
         # Extract and validate compute config for SLURM mode
         compute_config = None
         if mode != 'dev':
-            compute_config = self.conf.get('compute', {}).get('cluster-default', {})
+            compute_config = self.conf.get('compute', {}).get('cluster_default', {})
             slurm_account = compute_config.get('account', '').strip()
             if not slurm_account:
-                LOGGER.error('compute.cluster-default.account not set in config. Add account: <your-slurm-account> to your ~/.config/bioinformatics-tools/config.yaml')
+                LOGGER.error('compute.cluster_default.account not set in config. Add account: <your-slurm-account> to your ~/.config/bioinformatics-tools/config.yaml')
                 self.failed('SLURM account configuration is required for cluster execution')
                 return 1
 
         stem = Path(input_file).stem
         prefix = self._output_prefix()
 
-        # Output paths
-        out_prodigal = f"{prefix}prodigal/{stem}-prodigal.tkn"
+        # Only pass workflow-specific overrides to Snakemake
+        # The full config is loaded via --configfile from self.config_paths
+        config_overrides = {
+            'input_fasta': input_file,
+            'output_dir': prefix.rstrip('/'),
+            'main_database': main_database,
+        }
+
+        # Cache map - compute paths using same logic as workflow_helpers
+        # Note: These paths must match what margie.smk generates
+        out_prodigal_gff = f"{prefix}prodigal/{stem}-prodigal.gff"
         out_prodigal_faa = f"{prefix}prodigal/{stem}-prodigal.faa"
         out_prodigal_db = f"{prefix}prodigal/{stem}-prodigal_db.tkn"
-        out_pfam = f"{prefix}pfam/{stem}-pfam.tkn"
+        out_pfam = f"{prefix}pfam/pfam.tsv"
         out_pfam_db = f"{prefix}pfam/{stem}-pfam_db.tkn"
-        out_cog = f"{prefix}cog/{stem}-cog.tkn"
+        out_cog_tkn = f"{prefix}cog/cog.tkn"
         out_cog_classify = f"{prefix}cog/cog_classify.tsv"
         out_cog_count = f"{prefix}cog/cog_count.tsv"
         out_cog_db = f"{prefix}cog/{stem}-cog_db.tkn"
-        cog_outdir = f"{prefix}cog"
-        out_kofam = f"{prefix}kofam/{stem}-kofam.tkn"
+        out_kofam = f"{prefix}kofam/kofam.tsv"
         out_kofam_db = f"{prefix}kofam/{stem}-kofam_db.tkn"
         out_uniop = f"{prefix}uniop/operons.tsv"
-        out_uniop_db = f"{prefix}uniop/uniop_db.tkn"
+        out_uniop_db = f"{prefix}uniop/{stem}-uniop_db.tkn"
         out_dbcan = f"{prefix}dbcan/overview.tsv"
-        out_dbcan_db = f"{prefix}dbcan/dbcan_db.tkn"
+        out_dbcan_db = f"{prefix}dbcan/{stem}-dbcan_db.tkn"
 
-        smk_config = {
-            'input_fasta': input_file,
-            'out_prodigal': out_prodigal,
-            'out_prodigal_faa': out_prodigal_faa,
-            'out_prodigal_db': out_prodigal_db,
-            'out_pfam': out_pfam,
-            'out_pfam_db': out_pfam_db,
-            'out_cog': out_cog,
-            'out_cog_classify': out_cog_classify,
-            'out_cog_count': out_cog_count,
-            'out_cog_db': out_cog_db,
-            'cog_outdir': cog_outdir,
-            'out_uniop': out_uniop,
-            'out_uniop_db': out_uniop_db,
-            'out_dbcan': out_dbcan,
-            'out_dbcan_db': out_dbcan_db,
-            'out_kofam': out_kofam,
-            'out_kofam_db': out_kofam_db,
-            'main_database': main_database,
-            # Hierarchical tool configs - pass entire sections to snakemake
-            'prodigal': self.conf.get('prodigal', {}),
-            'pfam': self.conf.get('pfam', {}),
-            'cog': self.conf.get('cog', {}),
-            'dbcan': self.conf.get('dbcan', {}),
-            'kofam': self.conf.get('kofam', {}),
-            'uniop': self.conf.get('uniop', {}),
-        }
-
+        # Cache map - each tool includes ALL files (intermediates + token)
+        # This ensures when we have a cache HIT, we restore everything Snakemake needs
         cache_map = {
-            'prodigal': [out_prodigal, out_prodigal_faa],
-            'prodigal_db': [out_prodigal_db],
-            'pfam': [out_pfam],
-            'pfam_db': [out_pfam_db],
-            'cog': [out_cog, out_cog_classify, out_cog_count],
-            'cog_db': [out_cog_db],
-            'kofam': [out_kofam],
-            'kofam_db': [out_kofam_db],
-            'uniop': [out_uniop],
-            'uniop_db': [out_uniop_db],
-            'dbcan': [out_dbcan],
-            'dbcan_db': [out_dbcan_db],
+            'prodigal': [out_prodigal_gff, out_prodigal_faa, out_prodigal_db],
+            'pfam': [out_pfam, out_pfam_db],
+            'cog': [out_cog_tkn, out_cog_classify, out_cog_count, out_cog_db],
+            'kofam': [out_kofam, out_kofam_db],
+            'uniop': [out_uniop, out_uniop_db],
+            'dbcan': [out_dbcan, out_dbcan_db],
         }
 
-        self._run_pipeline('margie', smk_config, cache_map, mode=mode, compute_config=compute_config)
+        self._run_pipeline('margie', config_overrides, cache_map, mode=mode, compute_config=compute_config)

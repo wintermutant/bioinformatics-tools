@@ -1,7 +1,7 @@
 report:
   form: prose 
 
-maintenance-info:
+maintenance_info:
   version: 1
   description: 'This is the default configuration file'
   contact: 'https://github.com/Diet-Microbiome-Interactions-Lab/GeneralTools/issues'

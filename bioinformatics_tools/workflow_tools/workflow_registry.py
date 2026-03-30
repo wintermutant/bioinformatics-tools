@@ -12,32 +12,32 @@ from bioinformatics_tools.workflow_tools.models import WorkflowKey
 # These are needed for ANY workflow running via SLURM, not workflow-specific
 REQUIRED_SYSTEM_PARAMS = [
     {
-        'param': 'compute.cluster-default.account',
+        'param': 'compute.cluster_default.account',
         'default': None,
         'description': 'SLURM account for job submission (REQUIRED for cluster execution)',
         'type': 'string',
         'required': True
     },
     {
-        'param': 'compute.cluster-default.partition',
+        'param': 'compute.cluster_default.partition',
         'default': 'cpu',
         'description': 'SLURM partition/queue for job submission',
         'type': 'string'
     },
     {
-        'param': 'compute.cluster-default.default_runtime',
+        'param': 'compute.cluster_default.default_runtime',
         'default': 30,
         'description': 'Default runtime limit in minutes for SLURM jobs',
         'type': 'int'
     },
     {
-        'param': 'compute.cluster-default.default_mem_mb',
+        'param': 'compute.cluster_default.default_mem_mb',
         'default': 4000,
         'description': 'Default memory limit in MB for SLURM jobs',
         'type': 'int'
     },
     {
-        'param': 'compute.cluster-default.max_jobs',
+        'param': 'compute.cluster_default.max_jobs',
         'default': 5,
         'description': 'Maximum number of concurrent SLURM jobs',
         'type': 'int'

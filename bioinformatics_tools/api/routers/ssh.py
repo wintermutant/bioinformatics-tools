@@ -155,17 +155,17 @@ async def create_default_config(current_user: dict = Depends(get_current_user)):
     default_config = {
         "main_database": "~/.local/share/bioinformatics-tools/my-db.db",
         "compute": {
-            "cluster-default": {}
+            "cluster_default": {}
         }
     }
 
-    # Populate compute.cluster-default with all defaults from REQUIRED_SYSTEM_PARAMS
+    # Populate compute.cluster_default with all defaults from REQUIRED_SYSTEM_PARAMS
     for param in REQUIRED_SYSTEM_PARAMS:
-        if param['param'].startswith('compute.cluster-default.'):
+        if param['param'].startswith('compute.cluster_default.'):
             key = param['param'].split('.')[-1]  # Extract the last part (e.g., 'account', 'partition')
             default_value = param.get('default')
             # Use empty string for required fields with no default, otherwise use the default
-            default_config['compute']['cluster-default'][key] = default_value if default_value is not None else ""
+            default_config['compute']['cluster_default'][key] = default_value if default_value is not None else ""
 
     try:
         ssh_sftp.write_remote_yaml(path, default_config, connection=conn)
@@ -281,10 +281,10 @@ async def run_workflow(genome_data: GenomeSend, current_user: dict = Depends(get
     if not main_db or str(main_db).strip() == '':
         missing_fields.append('main_database')
 
-    # Check compute.cluster-default.account
-    account = user_config.get('compute', {}).get('cluster-default', {}).get('account')
+    # Check compute.cluster_default.account
+    account = user_config.get('compute', {}).get('cluster_default', {}).get('account')
     if not account or str(account).strip() == '':
-        missing_fields.append('compute.cluster-default.account (SLURM account)')
+        missing_fields.append('compute.cluster_default.account (SLURM account)')
 
     if missing_fields:
         raise HTTPException(
