@@ -2,72 +2,36 @@
 All MARGIE rules. No games.
 """
 import os
+import sys
+
+# Add current directory to path to import workflow_helpers
+sys.path.insert(0, os.path.dirname(workflow.snakefile))
+from workflow_helpers import rc, fixed_path, tool_output, db_token
 
 WORKFLOW_DIR = os.path.dirname(workflow.snakefile)
 
-def rc(rule_name, param=None, default=None):
-    """
-    Rule Config: Get config value for a specific rule's parameter.
-
-    Supports both nested and top-level config patterns:
-
-    Example configs:
-        # Nested (for tool parameters)
-        prodigal:
-          threads: 1
-          mem_mb: 2048
-
-        # Top-level (for simple values)
-        mykey: value
-
-    Usage in rules:
-        threads: rc('prodigal', 'threads', 1)   # nested lookup
-        value: rc('mykey', default='fallback')  # top-level lookup
-
-    Args:
-        rule_name: The tool name or config key
-        param: Parameter name (optional, for nested configs)
-        default: Default value if not found in config
-
-    Returns:
-        The config value or default if not set
-    """
-    # Use global config (available in all Snakemake files)
-    # This is more reliable than workflow.config during rule definition
-
-    # If param is None, lookup rule_name as a top-level key
-    if param is None:
-        return config.get(rule_name, default)
-
-    # Try nested lookup: config[rule_name][param]
-    rule_config = config.get(rule_name, {})
-    if isinstance(rule_config, dict):
-        return rule_config.get(param, default)
-
-    return default
-
 rule all:
     input:
-        config.get('out_prodigal_db', 'prodigal_db.tkn'),
-        config.get('out_pfam_db', 'pfam_db.tkn'),
-        config.get('out_cog_db', 'cog_db.tkn'),
-        config.get('out_kofam_db', 'kofam/kofam_db.tkn'),
-        config.get('out_uniop_db', 'uniop/uniop_db.tkn'),
-        config.get('out_dbcan_db', 'dbcan/dbcan_db.tkn')
+        db_token('prodigal', config=config),
+        db_token('pfam', config=config),
+        db_token('cog', config=config),
+        db_token('kofam', config=config),
+        db_token('uniop', config=config),
+        db_token('dbcan', config=config)
 
 
 rule run_prodigal:
     """prodigal"""
     input:
-        config.get('input_fasta')
+        rc('input_fasta', config=config)
     output:
-        gff=config.get('out_prodigal_gff', 'prodigal/prodigal.tkn'),
-        faa=config.get('out_prodigal_faa', 'prodigal/prodigal.faa')
+        gff=tool_output('prodigal.output', 'gff', config=config),
+        faa=tool_output('prodigal.output', 'faa', config=config)
     group: "prodigal"
-    threads: rc('prodigal', 'threads', 1)
+    threads: rc('prodigal.threads', 1, config=config)
     resources:
-        mem_mb=rc('prodigal', 'mem_mb', 2048),
-        runtime=rc('prodigal', 'runtime', 30)
+        mem_mb=rc('prodigal.mem_mb', 2048, config=config),
+        runtime=rc('prodigal.runtime', 30, config=config)
     container: "~/.cache/bioinformatics-tools/prodigal.sif"
     shell:
         """
@@ -78,12 +42,12 @@ rule run_prodigal:
 rule load_prodigal_to_db:
     """Load prodigal GFF output into SQLite database"""
     input:
-        gff=config.get('out_prodigal', 'prodigal/prodigal.tkn')
+        gff=tool_output('prodigal.output', 'gff', config=config)
     output:
-        tkn=config.get('out_prodigal_db', 'prodigal/prodigal_db.tkn')
+        tkn=db_token('prodigal', config=config)
     group: "prodigal"
     params:
-        db=config['main_database'],  # Required - no fallback
+        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -93,17 +57,17 @@ rule load_prodigal_to_db:
 
 rule run_pfam:
     input:
-        config.get('out_prodigal_faa', '/home/ddeemer/smallish.faa')
+        tool_output('prodigal.output', 'faa', config=config)
     output:
-        config.get('out_pfam', 'pfam/pfam.tkn')
+        fixed_path('pfam', 'pfam.tsv', use_stem=False, config=config)
     group: "pfam"
     container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
-    threads: rc('pfam', 'threads', 4)
+    threads: rc('pfam.threads', 4, config=config)
     resources:
-        mem_mb=rc('pfam', 'mem_mb', 4000),
-        runtime=rc('pfam', 'runtime', 240)
+        mem_mb=rc('pfam.mem_mb', 4000, config=config),
+        runtime=rc('pfam.runtime', 240, config=config)
     params:
-        db=rc('pfam', 'db', "/depot/lindems/data/Databases/pfam")
+        db=rc('pfam.db', "/depot/lindems/data/Databases/pfam", config=config)
     shell:
         """
         pfam_scan.py {input} {params.db} -out {output} -cpu {threads}
@@ -113,12 +77,12 @@ rule run_pfam:
 rule load_pfam_to_db:
     """Load pfam CSV output into SQLite database"""
     input:
-        csv=config.get('out_pfam', 'pfam/pfam.tkn')
+        csv=fixed_path('pfam', 'pfam.tsv', use_stem=False, config=config)
     output:
-        tkn=config.get('out_pfam_db', 'pfam/pfam_db.tkn')
+        tkn=db_token('pfam', config=config)
     group: "pfam"
     params:
-        db=config['main_database'],  # Required - no fallback
+        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -129,19 +93,19 @@ rule load_pfam_to_db:
 rule run_cog:
     """COGclassifier - classify proteins into COG functional categories"""
     input:
-        faa=config.get('out_prodigal_faa')
+        faa=tool_output('prodigal.output', 'faa', config=config)
     output:
-        classify=config.get('out_cog_classify', 'cog/cog_classify.tsv'),
-        counts=config.get('out_cog_count', 'cog/cog_count.tsv'),
-        tkn=config.get('out_cog', 'cog/cog.tkn')
+        classify=fixed_path('cog', 'cog_classify.tsv', use_stem=False, config=config),
+        counts=fixed_path('cog', 'cog_count.tsv', use_stem=False, config=config),
+        tkn=fixed_path('cog', 'cog.tkn', use_stem=False, config=config)
     group: "cog"
     params:
-        outdir=rc('cog', 'outdir', 'cog'),
-        db=rc('cog', 'db', '/depot/lindems/data/Databases/cog/')
-    threads: rc('cog', 'threads', 4)
+        outdir=rc('cog.outdir', 'cog', config=config),
+        db=rc('cog.db', '/depot/lindems/data/Databases/cog/', config=config)
+    threads: rc('cog.threads', 4, config=config)
     resources:
-        mem_mb=rc('cog', 'mem_mb', 8192),
-        runtime=rc('cog', 'runtime', 120)
+        mem_mb=rc('cog.mem_mb', 8192, config=config),
+        runtime=rc('cog.runtime', 120, config=config)
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
     shell:  # TODO: Remove this copy command
         """
@@ -155,13 +119,13 @@ rule run_cog:
 rule load_cog_to_db:
     """Load COGclassifier TSV output into SQLite database"""
     input:
-        classify=config.get('out_cog_classify', 'cog/cog_classify.tsv'),
-        counts=config.get('out_cog_count', 'cog/cog_count.tsv')
+        classify=fixed_path('cog', 'cog_classify.tsv', use_stem=False, config=config),
+        counts=fixed_path('cog', 'cog_count.tsv', use_stem=False, config=config)
     output:
-        tkn=config.get('out_cog_db', 'cog/cog_db.tkn')
+        tkn=db_token('cog', config=config)
     group: "cog"
     params:
-        db=config['main_database'],  # Required - no fallback
+        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -172,18 +136,18 @@ rule load_cog_to_db:
 
 rule run_kofam:
     input:
-        faa=config.get('out_prodigal_faa')
+        faa=tool_output('prodigal.output', 'faa', config=config)
     output:
-        results=config.get('out_kofam', 'kofam/kofam.tkn')
+        results=fixed_path('kofam', 'kofam.tsv', use_stem=False, config=config)
     container: "~/.cache/bioinformatics-tools/kofam_scan_light_bsp.sif"
-    threads: rc('kofam', 'threads', 16)
+    threads: rc('kofam.threads', 16, config=config)
     resources:
-        mem_mb=rc('kofam', 'mem_mb', 4000),
-        runtime=rc('kofam', 'runtime', 180)
+        mem_mb=rc('kofam.mem_mb', 4000, config=config),
+        runtime=rc('kofam.runtime', 180, config=config)
     group: "kofam"
     params:
-        profile_db=rc('kofam', 'profile_db', "/depot/lindems/data/Databases/kofams/profiles"),
-        ko_list=rc('kofam', 'ko_list', "/depot/lindems/data/Databases/kofams/ko_list")
+        profile_db=rc('kofam.profile_db', "/depot/lindems/data/Databases/kofams/profiles", config=config),
+        ko_list=rc('kofam.ko_list', "/depot/lindems/data/Databases/kofams/ko_list", config=config)
     shell:
         """
         exec_annotation {input.faa} -o {output.results} --profile {params.profile_db} --ko-list {params.ko_list} \
@@ -193,12 +157,12 @@ rule run_kofam:
 rule load_kofam_to_db:
     """Load KOFam_Scan output into SQLite database"""
     input:
-        results=config.get('out_kofam'),
+        results=fixed_path('kofam', 'kofam.tsv', use_stem=False, config=config)
     output:
-        tkn=config.get('out_kofam_db', 'kofam/kofam_db.tkn')
+        tkn=db_token('kofam', config=config)
     group: "kofam"
     params:
-        db=config['main_database'],  # Required - no fallback
+        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -209,33 +173,33 @@ rule load_kofam_to_db:
 rule run_uniop:
     """Operon prediction using operon_exec"""
     input:
-        faa=config.get('out_prodigal_faa')
+        faa=tool_output('prodigal.output', 'faa', config=config)
     output:
-        operons=config.get('out_uniop', 'uniop/operons.tsv')
+        operons=fixed_path('uniop', 'operons.tsv', use_stem=False, config=config)
     group: "uniop"
-    threads: rc('uniop', 'threads', 4)
+    threads: rc('uniop.threads', 4, config=config)
     resources:
-        mem_mb=rc('uniop', 'mem_mb', 4000),
-        runtime=rc('uniop', 'runtime', 120)
+        mem_mb=rc('uniop.mem_mb', 4000, config=config),
+        runtime=rc('uniop.runtime', 120, config=config)
     params:
-        output_dir=rc('uniop', 'output_dir', 'uniop')
+        output_dir=rc('uniop.output_dir', 'uniop', config=config)
     container: "~/.cache/bioinformatics-tools/opr-dev.sif"
     shell:
         """
         operon_exec -i {input.faa} -o {params.output_dir}
-        find {params.output_dir} -name "operons.tsv" -exec cp {{}} {output.operons} \;
+        cp $(find {params.output_dir} -name "operons.tsv") {output.operons}
         """
 
 
 rule load_uniop_to_db:
     """Load operon prediction results into SQLite database"""
     input:
-        operons=config.get('out_uniop', 'uniop/operons.tsv')
+        operons=fixed_path('uniop', 'operons.tsv', use_stem=False, config=config)
     output:
-        tkn=config.get('out_uniop_db', 'uniop/uniop_db.tkn')
+        tkn=db_token('uniop', config=config)
     group: "uniop"
     params:
-        db=config['main_database'],  # Required - no fallback
+        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
@@ -246,17 +210,17 @@ rule load_uniop_to_db:
 rule run_dbcan:
     """dbCAN - CAZyme annotation and CGC prediction"""
     input:
-        fasta=rc('input_fasta')
+        fasta=rc('input_fasta', config=config)
     output:
-        overview=config.get('out_dbcan', 'dbcan/overview.tsv')
+        overview=fixed_path('dbcan', 'overview.tsv', use_stem=False, config=config)
     group: "dbcan"
-    threads: rc('dbcan', 'threads', 4)
+    threads: rc('dbcan.threads', 4, config=config)
     resources:
-        mem_mb=rc('dbcan', 'mem_mb', 7984),
-        runtime=rc('dbcan', 'runtime', 180)
+        mem_mb=rc('dbcan.mem_mb', 7984, config=config),
+        runtime=rc('dbcan.runtime', 180, config=config)
     params:
-        output_dir=rc('dbcan', 'output_dir', 'dbcan'),
-        db=rc('dbcan', 'db', "/depot/lindems/data/Databases/cazyme/db")
+        output_dir=rc('dbcan.output_dir', 'dbcan', config=config),
+        db=rc('dbcan.db', "/depot/lindems/data/Databases/cazyme/db", config=config)
     container: "~/.cache/bioinformatics-tools/run_dbcan_light.sif"
     shell:
         """
@@ -269,12 +233,12 @@ rule run_dbcan:
 rule load_dbcan_to_db:
     """Load dbCAN overview results into SQLite database"""
     input:
-        overview=config.get('out_dbcan', 'dbcan/overview.tsv')
+        overview=fixed_path('dbcan', 'overview.tsv', use_stem=False, config=config)
     output:
-        tkn=config.get('out_dbcan_db', 'dbcan/dbcan_db.tkn')
+        tkn=db_token('dbcan', config=config)
     group: "dbcan"
     params:
-        db=config['main_database'],  # Required - no fallback
+        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
         script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
     shell:
         """
