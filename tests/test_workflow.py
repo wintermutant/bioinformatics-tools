@@ -9,7 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bioinformatics_tools.workflow_tools.workflow import WorkflowBase, workflow_keys
+from bioinformatics_tools.workflow_tools.workflow import WorkflowBase, WORKFLOWS
+from bioinformatics_tools.workflow_tools.workflow_registry import WORKFLOWS
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +23,7 @@ def wf():
     obj = WorkflowBase.__new__(WorkflowBase)
     conf = MagicMock()
     conf.get = MagicMock(side_effect=lambda key, default=None: {
-        'margie_db': '/tmp/test-margie.db',
+        'main_database': '/tmp/test-margie.db',
     }.get(key, default))
     obj.conf = conf
     obj.report = None
@@ -79,21 +80,30 @@ class TestParseSnakemakeOutput:
 class TestRunSubprocess:
 
     def test_success_returns_completed_process(self, wf):
-        fake = subprocess.CompletedProcess(args=['snakemake'], returncode=0, stdout='ok\n', stderr='')
-        with patch('bioinformatics_tools.workflow_tools.workflow.subprocess.run', return_value=fake):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = iter(['ok\n'])
+        mock_proc.stderr = iter([])
+        mock_proc.wait.return_value = None
+
+        with patch('bioinformatics_tools.workflow_tools.workflow.subprocess.Popen', return_value=mock_proc):
             result = wf._run_subprocess(['snakemake', '-s', 'test.smk'])
-        assert result is fake
         assert result.returncode == 0
+        assert result.stdout == 'ok'
 
     def test_nonzero_still_returns(self, wf):
-        fake = subprocess.CompletedProcess(args=['snakemake'], returncode=1, stdout='', stderr='Error in rule x:\n')
-        with patch('bioinformatics_tools.workflow_tools.workflow.subprocess.run', return_value=fake):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.stdout = iter([])
+        mock_proc.stderr = iter(['Error in rule x:\n'])
+        mock_proc.wait.return_value = None
+
+        with patch('bioinformatics_tools.workflow_tools.workflow.subprocess.Popen', return_value=mock_proc):
             result = wf._run_subprocess(['snakemake', '-s', 'test.smk'])
-        assert result is fake
         assert result.returncode == 1
 
     def test_launch_failure_returns_none(self, wf):
-        with patch('bioinformatics_tools.workflow_tools.workflow.subprocess.run',
+        with patch('bioinformatics_tools.workflow_tools.workflow.subprocess.Popen',
                    side_effect=FileNotFoundError('snakemake not found')):
             result = wf._run_subprocess(['snakemake', '-s', 'test.smk'])
         assert result is None
@@ -109,31 +119,31 @@ class TestRunSubprocess:
 class TestBuildExecutable:
 
     def test_has_keep_going(self, wf):
-        key = workflow_keys['selftest']
+        key = WORKFLOWS['selftest']
         cmd = wf.build_executable(key, mode='dev')
         assert '--keep-going' in cmd
 
     def test_dev_mode_no_slurm_executor(self, wf):
-        key = workflow_keys['selftest']
+        key = WORKFLOWS['selftest']
         cmd = wf.build_executable(key, mode='dev')
         assert '--executor=slurm' not in cmd
 
     def test_non_dev_has_slurm_executor(self, wf):
-        key = workflow_keys['selftest']
+        key = WORKFLOWS['selftest']
         cmd = wf.build_executable(key, mode='notdev')
         # Should appear exactly once
         assert cmd.count('--executor=slurm') == 1
 
     def test_config_dict_appended(self, wf):
-        key = workflow_keys['selftest']
-        cmd = wf.build_executable(key, config_dict={'foo': 'bar', 'baz': '42'}, mode='dev')
+        key = WORKFLOWS['selftest']
+        cmd = wf.build_executable(key, config_overrides={'foo': 'bar', 'baz': '42'}, mode='dev')
         assert '--config' in cmd
         idx = cmd.index('--config')
         assert 'foo=bar' in cmd[idx + 1:]
         assert 'baz=42' in cmd[idx + 1:]
 
     def test_dev_mode_no_default_resources(self, wf):
-        key = workflow_keys['selftest']
+        key = WORKFLOWS['selftest']
         cmd = wf.build_executable(key, mode='dev')
         assert '--default-resources' not in cmd
 
@@ -193,7 +203,7 @@ class TestRunPipeline:
             args=['snakemake'], returncode=1, stdout='', stderr='Error in rule x:\n',
         )
         cache_map = {'prodigal': ['out.tkn']}
-        smk_config = {'input_fasta': 'test.fa', 'margie_db': '/tmp/test.db'}
+        smk_config = {'input_fasta': 'test.fa', 'main_database': '/tmp/test.db'}
         with patch.object(wf, '_run_subprocess', return_value=fake_proc):
             wf._run_pipeline('example', smk_config, cache_map)
         mock_store.assert_not_called()
@@ -209,7 +219,7 @@ class TestRunPipeline:
             args=['snakemake'], returncode=0, stdout='', stderr='',
         )
         cache_map = {'prodigal': ['out.tkn']}
-        smk_config = {'input_fasta': 'test.fa', 'margie_db': '/tmp/test.db'}
+        smk_config = {'input_fasta': 'test.fa', 'main_database': '/tmp/test.db'}
         with patch.object(wf, '_run_subprocess', return_value=fake_proc):
             wf._run_pipeline('example', smk_config, cache_map)
         mock_store.assert_called_once()
@@ -243,7 +253,7 @@ class TestRunPipeline:
             args=['snakemake'], returncode=0, stdout='', stderr='',
         )
         cache_map = {'step_a': ['step_a/sample-a-step_a.out']}
-        smk_config = {'input_file': '/tmp/sample-a.txt', 'margie_db': '/tmp/sample.db'}
+        smk_config = {'input_file': '/tmp/sample-a.txt', 'main_database': '/tmp/sample.db'}
         with patch.object(wf, '_run_subprocess', return_value=fake_proc):
             wf._run_pipeline('selftest', smk_config, cache_map, mode='dev')
         mock_restore.assert_called_once_with('/tmp/sample.db', '/tmp/sample-a.txt', cache_map)
@@ -259,11 +269,7 @@ class TestDoQuickExample:
 
     @patch('bioinformatics_tools.workflow_tools.workflow.log_workflow_run')
     @patch('bioinformatics_tools.workflow_tools.workflow.store_all')
-    @patch('bioinformatics_tools.workflow_tools.workflow.restore_all', return_value={
-        'step_a': True, 'step_a_db': True,
-        'step_b': True, 'step_b_db': True,
-        'step_c': True, 'step_c_db': True,
-    })
+    @patch('bioinformatics_tools.workflow_tools.workflow.restore_all', return_value={})
     def test_quick_example_passes_cache_map(self, mock_restore, mock_store, mock_log, wf):
         """do_quick_example should call _run_pipeline with a cache_map matching the step keys."""
         fake_proc = subprocess.CompletedProcess(

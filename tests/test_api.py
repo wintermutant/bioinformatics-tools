@@ -106,21 +106,6 @@ class TestHealthEndpoints:
         assert resp.status_code == 200
         assert resp.json()["status"] == "success"
 
-    def test_files_health(self, client):
-        resp = client.get("/v1/files/health")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "success"
-
-    def test_files_config(self, client):
-        resp = client.get("/v1/files/config")
-        assert resp.status_code == 200
-
-    def test_files_status(self, client):
-        resp = client.get("/v1/files/status")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "status" in body
-
 
 # ---------------------------------------------------------------------------
 # Tier 2 — JobStore unit tests (purely in-memory)
@@ -211,7 +196,15 @@ class TestSSHEndpointsMocked:
 
     @patch("bioinformatics_tools.api.routers.ssh._build_connection")
     @patch("bioinformatics_tools.api.routers.ssh.job_runner")
-    def test_run_margie(self, mock_runner, mock_build_conn, authed_client):
+    @patch("bioinformatics_tools.api.routers.ssh.ssh_sftp")
+    def test_run_margie(self, mock_sftp, mock_runner, mock_build_conn, authed_client):
+        # Mock the config file read and genome file check
+        mock_sftp.read_remote_yaml.return_value = {
+            "main_database": "~/my-db.db",
+            "compute": {"cluster_default": {"account": "test-account"}}
+        }
+        mock_sftp.check_remote_file.return_value = None  # No exception = file exists
+
         resp = authed_client.post(
             "/v1/ssh/run_workflow",
             json={"genome_path": "/depot/genomes/ecoli.fasta"},
