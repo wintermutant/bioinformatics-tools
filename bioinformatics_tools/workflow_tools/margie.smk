@@ -6,27 +6,62 @@ import sys
 
 # Add current directory to path to import workflow_helpers
 sys.path.insert(0, os.path.dirname(workflow.snakefile))
-from workflow_helpers import rc, fixed_path, tool_output, db_token
+from workflow_helpers import rc, fixed_path, build_filepath, db_token
 
 WORKFLOW_DIR = os.path.dirname(workflow.snakefile)
 
+# ─────────────────────── Path Definitions ─────────────────────── #
+# Single source of truth for all file paths. Change paths here, not in rules.
+
+# Common paths
+INPUT_FASTA = rc('input_fasta', config=config)
+MAIN_DATABASE = rc('main_database', config=config)
+LOAD_SCRIPT = os.path.join(WORKFLOW_DIR, "load_to_db.py")
+
+# Prodigal outputs
+PRODIGAL_GFF = build_filepath('prodigal.output', 'gff', config=config)
+PRODIGAL_FAA = build_filepath('prodigal.output', 'faa', config=config)
+PRODIGAL_TOKEN = db_token('prodigal', config=config)
+
+# Pfam outputs
+PFAM_TSV = fixed_path('pfam/pfam.tsv', config=config)
+PFAM_TOKEN = db_token('pfam', config=config)
+
+# COG outputs
+COG_CLASSIFY = fixed_path('cog/cog_classify.tsv', config=config)
+COG_COUNTS = fixed_path('cog/cog_count.tsv', config=config)
+COG_TKN = fixed_path('cog/cog.tkn', config=config)
+COG_TOKEN = db_token('cog', config=config)
+
+# KOFam outputs
+KOFAM_TSV = fixed_path('kofam/kofam.tsv', config=config)
+KOFAM_TOKEN = db_token('kofam', config=config)
+
+# Uniop outputs
+UNIOP_OPERONS = fixed_path('uniop/operons.tsv', config=config)
+UNIOP_TOKEN = db_token('uniop', config=config)
+
+# dbCAN outputs
+DBCAN_OVERVIEW = fixed_path('dbcan/overview.tsv', config=config)
+DBCAN_TOKEN = db_token('dbcan', config=config)
+
 rule all:
     input:
-        db_token('prodigal', config=config),
-        db_token('pfam', config=config),
-        db_token('cog', config=config),
-        db_token('kofam', config=config),
-        db_token('uniop', config=config),
-        db_token('dbcan', config=config)
+        PRODIGAL_TOKEN,
+        PFAM_TOKEN,
+        COG_TOKEN,
+        KOFAM_TOKEN,
+        UNIOP_TOKEN,
+        DBCAN_TOKEN
 
 
 rule run_prodigal:
     """prodigal"""
     input:
-        rc('input_fasta', config=config)
+        INPUT_FASTA
     output:
-        gff=tool_output('prodigal.output', 'gff', config=config),
-        faa=tool_output('prodigal.output', 'faa', config=config)
+        gff=PRODIGAL_GFF,
+        faa=PRODIGAL_FAA
     group: "prodigal"
     threads: rc('prodigal.threads', 1, config=config)
     resources:
@@ -42,13 +77,13 @@ rule run_prodigal:
 rule load_prodigal_to_db:
     """Load prodigal GFF output into SQLite database"""
     input:
-        gff=tool_output('prodigal.output', 'gff', config=config)
+        gff=PRODIGAL_GFF
     output:
-        tkn=db_token('prodigal', config=config)
+        tkn=PRODIGAL_TOKEN
     group: "prodigal"
     params:
-        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+        db=MAIN_DATABASE,
+        script=LOAD_SCRIPT
     shell:
         """
         python {params.script} gff {input.gff} {params.db} prodigal --token {output.tkn}
@@ -57,9 +92,9 @@ rule load_prodigal_to_db:
 
 rule run_pfam:
     input:
-        tool_output('prodigal.output', 'faa', config=config)
+        PRODIGAL_FAA
     output:
-        fixed_path('pfam', 'pfam.tsv', use_stem=False, config=config)
+        PFAM_TSV
     group: "pfam"
     container: "~/.cache/bioinformatics-tools/pfam_scan_light.sif"
     threads: rc('pfam.threads', 4, config=config)
@@ -77,13 +112,13 @@ rule run_pfam:
 rule load_pfam_to_db:
     """Load pfam CSV output into SQLite database"""
     input:
-        csv=fixed_path('pfam', 'pfam.tsv', use_stem=False, config=config)
+        csv=PFAM_TSV
     output:
-        tkn=db_token('pfam', config=config)
+        tkn=PFAM_TOKEN
     group: "pfam"
     params:
-        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+        db=MAIN_DATABASE,
+        script=LOAD_SCRIPT
     shell:
         """
         python {params.script} csv {input.csv} {params.db} pfam --token {output.tkn}
@@ -93,11 +128,11 @@ rule load_pfam_to_db:
 rule run_cog:
     """COGclassifier - classify proteins into COG functional categories"""
     input:
-        faa=tool_output('prodigal.output', 'faa', config=config)
+        faa=PRODIGAL_FAA
     output:
-        classify=fixed_path('cog', 'cog_classify.tsv', use_stem=False, config=config),
-        counts=fixed_path('cog', 'cog_count.tsv', use_stem=False, config=config),
-        tkn=fixed_path('cog', 'cog.tkn', use_stem=False, config=config)
+        classify=COG_CLASSIFY,
+        counts=COG_COUNTS,
+        tkn=COG_TKN
     group: "cog"
     params:
         outdir=rc('cog.outdir', 'cog', config=config),
@@ -107,7 +142,7 @@ rule run_cog:
         mem_mb=rc('cog.mem_mb', 8192, config=config),
         runtime=rc('cog.runtime', 120, config=config)
     container: "~/.cache/bioinformatics-tools/cogclassifier.sif"
-    shell:  # TODO: Remove this copy command
+    shell:
         """
         LOCAL_DB=$TMPDIR/cog_db
         cp -r {params.db} "$LOCAL_DB"
@@ -119,14 +154,14 @@ rule run_cog:
 rule load_cog_to_db:
     """Load COGclassifier TSV output into SQLite database"""
     input:
-        classify=fixed_path('cog', 'cog_classify.tsv', use_stem=False, config=config),
-        counts=fixed_path('cog', 'cog_count.tsv', use_stem=False, config=config)
+        classify=COG_CLASSIFY,
+        counts=COG_COUNTS
     output:
-        tkn=db_token('cog', config=config)
+        tkn=COG_TOKEN
     group: "cog"
     params:
-        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+        db=MAIN_DATABASE,
+        script=LOAD_SCRIPT
     shell:
         """
         python {params.script} tsv {input.classify} {params.db} cog_classify --token {output.tkn} \
@@ -136,9 +171,9 @@ rule load_cog_to_db:
 
 rule run_kofam:
     input:
-        faa=tool_output('prodigal.output', 'faa', config=config)
+        faa=PRODIGAL_FAA
     output:
-        results=fixed_path('kofam', 'kofam.tsv', use_stem=False, config=config)
+        results=KOFAM_TSV
     container: "~/.cache/bioinformatics-tools/kofam_scan_light_bsp.sif"
     threads: rc('kofam.threads', 16, config=config)
     resources:
@@ -157,13 +192,13 @@ rule run_kofam:
 rule load_kofam_to_db:
     """Load KOFam_Scan output into SQLite database"""
     input:
-        results=fixed_path('kofam', 'kofam.tsv', use_stem=False, config=config)
+        results=KOFAM_TSV
     output:
-        tkn=db_token('kofam', config=config)
+        tkn=KOFAM_TOKEN
     group: "kofam"
     params:
-        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+        db=MAIN_DATABASE,
+        script=LOAD_SCRIPT
     shell:
         """
         python {params.script} tsv {input.results} {params.db} kofam_scan --token {output.tkn}
@@ -173,9 +208,9 @@ rule load_kofam_to_db:
 rule run_uniop:
     """Operon prediction using operon_exec"""
     input:
-        faa=tool_output('prodigal.output', 'faa', config=config)
+        faa=PRODIGAL_FAA
     output:
-        operons=fixed_path('uniop', 'operons.tsv', use_stem=False, config=config)
+        operons=UNIOP_OPERONS
     group: "uniop"
     threads: rc('uniop.threads', 4, config=config)
     resources:
@@ -194,13 +229,13 @@ rule run_uniop:
 rule load_uniop_to_db:
     """Load operon prediction results into SQLite database"""
     input:
-        operons=fixed_path('uniop', 'operons.tsv', use_stem=False, config=config)
+        operons=UNIOP_OPERONS
     output:
-        tkn=db_token('uniop', config=config)
+        tkn=UNIOP_TOKEN
     group: "uniop"
     params:
-        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+        db=MAIN_DATABASE,
+        script=LOAD_SCRIPT
     shell:
         """
         python {params.script} tsv {input.operons} {params.db} uniop --token {output.tkn}
@@ -210,9 +245,9 @@ rule load_uniop_to_db:
 rule run_dbcan:
     """dbCAN - CAZyme annotation and CGC prediction"""
     input:
-        fasta=rc('input_fasta', config=config)
+        fasta=INPUT_FASTA
     output:
-        overview=fixed_path('dbcan', 'overview.tsv', use_stem=False, config=config)
+        overview=DBCAN_OVERVIEW
     group: "dbcan"
     threads: rc('dbcan.threads', 4, config=config)
     resources:
@@ -233,24 +268,81 @@ rule run_dbcan:
 rule load_dbcan_to_db:
     """Load dbCAN overview results into SQLite database"""
     input:
-        overview=fixed_path('dbcan', 'overview.tsv', use_stem=False, config=config)
+        overview=DBCAN_OVERVIEW
     output:
-        tkn=db_token('dbcan', config=config)
+        tkn=DBCAN_TOKEN
     group: "dbcan"
     params:
-        db=rc('main_database', config=config),  # TODO: Add specific error if main_database is not set
-        script=os.path.join(WORKFLOW_DIR, "load_to_db.py")
+        db=MAIN_DATABASE,
+        script=LOAD_SCRIPT
     shell:
         """
         python {params.script} tsv {input.overview} {params.db} dbcan --token {output.tkn}
         """
 
-# Rules to add
-# rule run_merops:
-# rule run_tigr:
-# rule run_uniport:
-# rule term_predict:
-# rule run_rast:
-# rule run_tcdb:
-# rule run_promotech:
-# rule finalize:
+# ═════════════════════════════════════════════════════════════════════════════
+#                           NEW RULE TEMPLATE
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Quick guide for adding new annotation tools to the MARGIE workflow.
+#
+# STEP 1: Add path definitions at top (around line 15)
+# ────────────────────────────────────────────────────────────────────────────
+# MYTOOL_OUTPUT = fixed_path('mytool/results.tsv', config=config)
+# MYTOOL_TOKEN = db_token('mytool', config=config)
+#
+# STEP 2: Add token to rule all (around line 53)
+# ────────────────────────────────────────────────────────────────────────────
+# rule all:
+#     input:
+#         ...,
+#         MYTOOL_TOKEN
+#
+# STEP 3: Copy and customize this template
+# ────────────────────────────────────────────────────────────────────────────
+#
+# rule run_MYTOOL:
+#     """Brief description of what MYTOOL does"""
+#     input:
+#         PRODIGAL_FAA  # Or INPUT_FASTA if tool needs raw genome
+#     output:
+#         MYTOOL_OUTPUT
+#     group: "MYTOOL"
+#     threads: rc('MYTOOL.threads', 4, config=config)
+#     resources:
+#         mem_mb=rc('MYTOOL.mem_mb', 4000, config=config),
+#         runtime=rc('MYTOOL.runtime', 120, config=config)
+#     params:
+#         db=rc('MYTOOL.db', "/path/to/database", config=config)
+#     container: "~/.cache/bioinformatics-tools/MYTOOL.sif"
+#     shell:
+#         """
+#         mytool_command {input} {output} --db {params.db} --threads {threads}
+#         """
+#
+#
+# rule load_MYTOOL_to_db:
+#     """Load MYTOOL results into SQLite database"""
+#     input:
+#         MYTOOL_OUTPUT
+#     output:
+#         tkn=MYTOOL_TOKEN
+#     group: "MYTOOL"
+#     params:
+#         db=MAIN_DATABASE,
+#         script=LOAD_SCRIPT
+#     shell:
+#         """
+#         python {params.script} tsv {input} {params.db} MYTOOL --token {output.tkn}
+#         """
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTES:
+# ─────────────────────────────────────────────────────────────────────────────
+# • Use fixed_path() for tools that output to fixed filenames
+# • Use build_filepath() for tools where output name can be configured
+# • Common inputs: PRODIGAL_FAA (proteins), PRODIGAL_GFF (genes), INPUT_FASTA (raw genome)
+# • Always use rc() for configurable parameters with sensible defaults
+# • Group name should match tool name for easier debugging
+# • loader format: tsv, csv, gff (see load_to_db.py for supported formats)
+# ═════════════════════════════════════════════════════════════════════════════
