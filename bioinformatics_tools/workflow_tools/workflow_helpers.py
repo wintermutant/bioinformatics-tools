@@ -7,33 +7,15 @@ Import into Snakemake files to access config and generate output paths.
 from pathlib import Path
 
 
-def rc(key, default=None, config=None):
+def rc(key: str, default:str|None = None, config=None):
     """
     Rule Config: Get config value using dot notation for nested keys.
 
     Supports arbitrary nesting via dot notation:
-
-    Example config:
-        prodigal:
-          threads: 1
-          mem_mb: 2048
-        compute:
-          cluster_default:
-            account: myaccount
-            partition: cpu
-
-    Usage in rules:
-        threads: rc('prodigal.threads', 1, config=config)
-        account: rc('compute.cluster_default.account', None, config=config)
-        simple: rc('input_fasta', config=config)
-
-    Args:
-        key: Config key using dot notation (e.g., 'prodigal.mem_mb')
-        default: Default value if not found in config
-        config: The Snakemake config dict
+    key: Config key using dot notation (e.g., 'prodigal.mem_mb')
 
     Returns:
-        The config value or default if not set
+        The config value OR default OR if not set
     """
     if config is None:
         raise ValueError("config parameter is required")
@@ -51,7 +33,7 @@ def rc(key, default=None, config=None):
     return value
 
 
-def get_stem(config):
+def get_input_stem(config):
     """
     Extract stem (filename without extension) from input file.
     """
@@ -59,120 +41,70 @@ def get_stem(config):
     return Path(input_file).stem
 
 
-def get_workflow_prefix(config):
+def get_workflow_prefix(config) -> str | Path:
     """
-    Get output directory prefix with trailing slash.
-    Always returns an absolute path.
+    Get output directory prefix with stem subdirectory and trailing slash.
+
+    Each genome gets isolated in its own subdirectory for clean batch processing.
 
     Example:
-        output_dir: './tmp-2'
-        --> '/home/ddeemer/git-repos/bioinformatics-tools/tmp-2/'
-
-        output_dir: '/results/2024-03-24'
-        --> '/results/2024-03-24/'
+        input_fasta: 'ecoli.fasta'
+        output_dir: '/results/batch-run'
+        → '/results/batch-run/ecoli/'
     """
     output_dir = config.get('output_dir', '')
     if not output_dir:
         return ''
 
-    # Convert to absolute path and add trailing slash
+    stem = get_input_stem(config)
     abs_path = Path(output_dir).resolve()
-    return f"{abs_path}/"
+    return f"{abs_path}/{stem}/"
 
 
-def fixed_path(tool, filename='', use_stem=True, config=None) -> str:
+def fixed_path(relative_path: str, config=None) -> str:
+    """Prepend workflow prefix to a relative path. E.g., 'prodigal/file.faa' → 'results/prodigal/file.faa'"""
+    if config is None:
+        raise ValueError("config parameter is required")
+
+    prefix = get_workflow_prefix(config)
+    return f"{prefix}{relative_path}"
+
+
+def build_filepath(config_string: str, suffix: str, default: str = None, config=None) -> str:
     """
-    Generate output paths for fixed filenames (non-configurable).
+    Build filepath with config lookup and auto-generation.
 
-    Use this for tool outputs with fixed, unchanging filenames like:
-    - pfam.tsv (always named 'pfam.tsv')
-
-    For user-configurable outputs, use tool_output() instead.
-
-    Generates paths using the pattern:
-        {prefix}{tool}/{stem}-{filename}  (if use_stem=True)
-        {prefix}{tool}/{filename}          (if use_stem=False)
+    Priority: 1) Config value, 2) Default path, 3) Auto-generate {tool}/{stem}-{tool}.{suffix}
 
     Examples:
-        # With stem
-        fixed_path('prodigal', 'prodigal.faa', config=config)
-        # config: input_fasta='ecoli.fasta', output_dir='results/'
-        # 'results/prodigal/ecoli-prodigal.faa'
-
-        # Without stem (fixed filename)
-        fixed_path('pfam', 'pfam.tsv', use_stem=False, config=config)
-        # 'results/pfam/pfam.tsv'
+        build_filepath('pfam.output', suffix='tsv') → 'results/pfam/ecoli-pfam.tsv'
+        build_filepath('cog.output', suffix='txt', default='cog/results.txt') → 'results/cog/results.txt'
+        # With config pfam.output='custom.tsv' → 'results/pfam/custom.tsv'
     """
     if config is None:
         raise ValueError("config parameter is required")
 
     prefix = get_workflow_prefix(config)
-    stem = get_stem(config)
 
-    # Build filename
-    if use_stem and filename and stem:
-        final_filename = f"{stem}-{filename}"
-    else:
-        final_filename = filename
-
-    return f"{prefix}{tool}/{final_filename}"
-
-
-def tool_output(config_string: str, suffix: str, config=None) -> str:
-    """
-    Return file output string from config (if defined) or build a standard name.
-
-    Example configs:
-        prodigal:
-          output: my_custom_genes
-
-    config_string: Dot-notation config key where first part = tool/directory name
-                   (e.g., 'prodigal.output', 'prodigal.v1.output')
-
-    Examples:
-        1. config: prodigal.output = 'my_genes'
-        tool_output('prodigal.output', 'gff', config=config)
-        = '{prefix}/prodigal/my_genes.gff'
-
-        2. NO config value:
-        tool_output('prodigal.output', 'gff', config=config)
-        = '{prefix}/prodigal/ecoli-prodigal.gff'
-          {prefix}/{tool}/{stem}-{tool}.{suffix}
-    """
-    if config is None:
-        raise ValueError("config parameter is required")
-
-    parts = config_string.split('.')  # FIRST PART is always the tool/directory name
+    parts = config_string.split('.')
     if len(parts) < 1:
         raise ValueError(f"config_string must have at least one part, got: {config_string}")
+    tool = parts[0]
 
-    tool = parts[0]  # First part determines directory structure
+    # Check config first
+    config_filename = rc(config_string, None, config=config)
+    if config_filename:
+        return f"{prefix}{tool}/{config_filename}"
 
-    custom_filename = rc(config_string, None, config=config)
+    # Use default if provided
+    if default:
+        return f"{prefix}{default}"
 
-    prefix = get_workflow_prefix(config)
-
-    if custom_filename:
-        return f"{prefix}{tool}/{custom_filename}.{suffix}"
-    else:
-        # Auto-generate with stem: {prefix}{tool}/{stem}-{tool}.{suffix}
-        stem = get_stem(config)
-        return f"{prefix}{tool}/{stem}-{tool}.{suffix}"
+    # Auto-generate with stem
+    stem = get_input_stem(config)
+    return f"{prefix}{tool}/{stem}-{tool}.{suffix}"
 
 
 def db_token(tool, config=None):
-    """
-    Generate database token path: {tool}/{stem}-{tool}_db.tkn
-
-    Args:
-        tool: Tool name (e.g., 'prodigal', 'pfam')
-        config: The Snakemake config dict
-
-    Returns:
-        Path to database token file
-
-    Example:
-        db_token('prodigal', config=config)
-        → 'results/prodigal/ecoli-prodigal_db.tkn'
-    """
-    return fixed_path(tool, f'{tool}_db.tkn', use_stem=True, config=config)
+    """Generate database token path: {tool}/{tool}_db.tkn"""
+    return fixed_path(f'{tool}/{tool}_db.tkn', config=config)
