@@ -108,9 +108,40 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
 
 # ───────────────────────── single-tool helpers ───────────────────────── #
 
+def _extract_pattern_suffix(filename: str) -> str:
+    """Extract the pattern suffix for matching across different stems.
+
+    Files follow two patterns:
+    1. With stem: "{stem}-{rest}" → pattern = "-{rest}"
+    2. Without stem: "{filename}" → pattern = "{filename}"
+
+    Examples:
+        'genome-a-prodigal.gff' → '-prodigal.gff'
+        'genome-b-prodigal_db.tkn' → '-prodigal_db.tkn'
+        'pfam.tsv' → 'pfam.tsv'
+        'cog_classify.tsv' → 'cog_classify.tsv'
+    """
+    # If filename contains a dash, assume it's {stem}-{rest}
+    # Pattern is everything from first dash onwards
+    if '-' in filename:
+        return '-' + filename.split('-', 1)[1]
+    # Otherwise, it's a fixed filename without stem
+    return filename
+
+
 def restore(db_path: str, input_file: str, tool_name: str,
             output_paths: list[str]) -> bool:
-    """Restore cached outputs for *tool_name* from the DB.
+    """Restore cached outputs for *tool_name* from the DB using pattern matching.
+
+    Matches files by pattern suffix rather than exact filename, allowing cache hits
+    across different input filenames with identical content.
+
+    Examples:
+        Cached: genome-a-prodigal.gff (pattern: -prodigal.gff)
+        Expected: genome-b-prodigal.gff (pattern: -prodigal.gff) → MATCH!
+
+        Cached: pfam.tsv (pattern: pfam.tsv)
+        Expected: pfam.tsv (pattern: pfam.tsv) → MATCH!
 
     Returns True if **all** expected files were found in the cache and
     written to disk, False on any miss.
@@ -119,7 +150,6 @@ def restore(db_path: str, input_file: str, tool_name: str,
         return False
 
     input_hash = _compute_file_hash(input_file)
-    expected = {Path(p).name for p in output_paths}
 
     conn = _get_connection(db_path)
     try:
@@ -132,19 +162,34 @@ def restore(db_path: str, input_file: str, tool_name: str,
     finally:
         conn.close()
 
-    cached = {fname: blob for fname, blob in rows}
-
-    if not expected.issubset(cached.keys()):
-        missing = expected - cached.keys()
-        LOGGER.info("Cache miss for %s: expected %s, found %s, missing %s",
-                   tool_name, expected, set(cached.keys()), missing)
+    if not rows:
+        LOGGER.info("Cache miss for %s: no cached files found for this input", tool_name)
         return False
 
-    # Write BLOBs to the expected output paths
+    # Build pattern -> blob mapping from cached files
+    cached_patterns = {}
+    for fname, blob in rows:
+        pattern = _extract_pattern_suffix(fname)
+        cached_patterns[pattern] = blob
+
+    # Match expected files by pattern
+    matched = {}
     for path in output_paths:
-        fname = Path(path).name
+        expected_fname = Path(path).name
+        expected_pattern = _extract_pattern_suffix(expected_fname)
+
+        if expected_pattern in cached_patterns:
+            matched[path] = cached_patterns[expected_pattern]
+        else:
+            LOGGER.info("Cache miss for %s: no match for pattern '%s' (file: %s)",
+                       tool_name, expected_pattern, expected_fname)
+            LOGGER.debug("Available patterns: %s", list(cached_patterns.keys()))
+            return False
+
+    # Write all matched BLOBs to expected paths
+    for path, blob in matched.items():
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_bytes(cached[fname])
+        Path(path).write_bytes(blob)
         LOGGER.info("Restored from cache: %s", path)
 
     return True
@@ -192,14 +237,14 @@ def store(db_path: str, input_file: str, tool_name: str,
 # ──────────────────────── multi-tool wrappers ──────────────────────── #
 
 def restore_all(db_path: str, input_file: str,
-                tool_outputs_map: dict[str, list[str]]) -> dict[str, bool]:
-    """Restore cached outputs for every tool in *tool_outputs_map*.
+                build_filepaths_map: dict[str, list[str]]) -> dict[str, bool]:
+    """Restore cached outputs for every tool in *build_filepaths_map*.
 
     Returns ``{tool_name: hit_bool}`` so the caller can log which tools
     were restored.
     """
     results: dict[str, bool] = {}
-    for tool_name, output_paths in tool_outputs_map.items():
+    for tool_name, output_paths in build_filepaths_map.items():
         hit = restore(db_path, input_file, tool_name, output_paths)
         results[tool_name] = hit
         if hit:
@@ -210,11 +255,11 @@ def restore_all(db_path: str, input_file: str,
 
 
 def store_all(db_path: str, input_file: str,
-              tool_outputs_map: dict[str, list[str]]) -> None:
-    """Store outputs for every tool in *tool_outputs_map* into the DB."""
-    total_tools = len(tool_outputs_map)
+              build_filepaths_map: dict[str, list[str]]) -> None:
+    """Store outputs for every tool in *build_filepaths_map* into the DB."""
+    total_tools = len(build_filepaths_map)
     LOGGER.info("Storing outputs to cache for %d tools...", total_tools)
-    for idx, (tool_name, output_paths) in enumerate(tool_outputs_map.items(), 1):
+    for idx, (tool_name, output_paths) in enumerate(build_filepaths_map.items(), 1):
         LOGGER.info("Caching %s (%d/%d)...", tool_name, idx, total_tools)
         store(db_path, input_file, tool_name, output_paths)
         LOGGER.info("✓ Cached outputs for %s", tool_name)
