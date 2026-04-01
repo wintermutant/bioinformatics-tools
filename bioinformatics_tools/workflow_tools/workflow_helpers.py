@@ -59,7 +59,7 @@ def get_stem(config):
     return Path(input_file).stem
 
 
-def get_prefix(config):
+def get_workflow_prefix(config):
     """
     Get output directory prefix with trailing slash.
     Always returns an absolute path.
@@ -106,7 +106,7 @@ def fixed_path(tool, filename='', use_stem=True, config=None) -> str:
     if config is None:
         raise ValueError("config parameter is required")
 
-    prefix = get_prefix(config)
+    prefix = get_workflow_prefix(config)
     stem = get_stem(config)
 
     # Build filename
@@ -118,72 +118,41 @@ def fixed_path(tool, filename='', use_stem=True, config=None) -> str:
     return f"{prefix}{tool}/{final_filename}"
 
 
-def tool_output(config_key, suffix, config=None) -> str:
+def tool_output(config_string: str, suffix: str, config=None) -> str:
     """
-    Generate standardized output path with support for user-specified filenames.
-
-    CONVENTION: The first part of config_key is ALWAYS the tool/directory name.
-    This supports arbitrary nesting while maintaining predictable directory structure.
+    Return file output string from config (if defined) or build a standard name.
 
     Example configs:
-        # Simple case
         prodigal:
           output: my_custom_genes
 
-        # Nested case (supports versioning, variants, etc.)
-        prodigal:
-          version1:
-            output: custom_v1
-            threads: 4
-          version2:
-            output: custom_v2
-
-    Usage:
-        tool_output('prodigal.output', 'gff', config=config)
-        → Directory: 'prodigal/', Lookup: config['prodigal']['output']
-
-        tool_output('prodigal.version1.output', 'gff', config=config)
-        → Directory: 'prodigal/', Lookup: config['prodigal']['version1']['output']
-
-    Args:
-        config_key: Dot-notation config key where first part = tool/directory name
+    config_string: Dot-notation config key where first part = tool/directory name
                    (e.g., 'prodigal.output', 'prodigal.v1.output')
-        suffix: File extension (e.g., 'gff', 'faa')
-        config: The Snakemake config dict
 
     Examples:
-        # User specifies custom filename (simple)
-        # config: prodigal.output = 'my_genes'
+        1. config: prodigal.output = 'my_genes'
         tool_output('prodigal.output', 'gff', config=config)
-        → 'results/prodigal/my_genes.gff'
+        = '{prefix}/prodigal/my_genes.gff'
 
-        # User specifies custom filename (nested)
-        # config: prodigal.v1.output = 'custom_v1'
-        tool_output('prodigal.v1.output', 'gff', config=config)
-        → 'results/prodigal/custom_v1.gff'
-
-        # User doesn't specify, auto-generate with stem
-        # config: input_fasta = 'ecoli.fasta'
+        2. NO config value:
         tool_output('prodigal.output', 'gff', config=config)
-        → 'results/prodigal/ecoli-prodigal.gff'
+        = '{prefix}/prodigal/ecoli-prodigal.gff'
+          {prefix}/{tool}/{stem}-{tool}.{suffix}
     """
     if config is None:
         raise ValueError("config parameter is required")
 
-    # Parse config_key - FIRST PART is always the tool/directory name
-    parts = config_key.split('.')
+    parts = config_string.split('.')  # FIRST PART is always the tool/directory name
     if len(parts) < 1:
-        raise ValueError(f"config_key must have at least one part, got: {config_key}")
+        raise ValueError(f"config_string must have at least one part, got: {config_string}")
 
     tool = parts[0]  # First part determines directory structure
 
-    # Check if user specified a custom filename via rc() (supports arbitrary nesting)
-    custom_filename = rc(config_key, None, config=config)
+    custom_filename = rc(config_string, None, config=config)
 
-    prefix = get_prefix(config)
+    prefix = get_workflow_prefix(config)
 
     if custom_filename:
-        # User specified custom filename: {prefix}{tool}/{custom_filename}.{suffix}
         return f"{prefix}{tool}/{custom_filename}.{suffix}"
     else:
         # Auto-generate with stem: {prefix}{tool}/{stem}-{tool}.{suffix}

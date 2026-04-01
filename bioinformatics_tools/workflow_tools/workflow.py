@@ -405,22 +405,23 @@ class WorkflowBase(ProgramBase):
         }
 
         # Cache map - compute paths using same logic as workflow_helpers
-        # Note: These paths must match what margie.smk generates
-        out_prodigal_gff = f"{prefix}prodigal/{stem}-prodigal.gff"
-        out_prodigal_faa = f"{prefix}prodigal/{stem}-prodigal.faa"
-        out_prodigal_db = f"{prefix}prodigal/{stem}-prodigal_db.tkn"
-        out_pfam = f"{prefix}pfam/pfam.tsv"
-        out_pfam_db = f"{prefix}pfam/{stem}-pfam_db.tkn"
-        out_cog_tkn = f"{prefix}cog/cog.tkn"
-        out_cog_classify = f"{prefix}cog/cog_classify.tsv"
-        out_cog_count = f"{prefix}cog/cog_count.tsv"
-        out_cog_db = f"{prefix}cog/{stem}-cog_db.tkn"
-        out_kofam = f"{prefix}kofam/kofam.tsv"
-        out_kofam_db = f"{prefix}kofam/{stem}-kofam_db.tkn"
-        out_uniop = f"{prefix}uniop/operons.tsv"
-        out_uniop_db = f"{prefix}uniop/{stem}-uniop_db.tkn"
-        out_dbcan = f"{prefix}dbcan/overview.tsv"
-        out_dbcan_db = f"{prefix}dbcan/{stem}-dbcan_db.tkn"
+        # Note: These paths must match what margie.smk generates (includes stem subdirectory)
+        prefix_with_stem = f"{prefix}{stem}/"
+        out_prodigal_gff = f"{prefix_with_stem}prodigal/{stem}-prodigal.gff"
+        out_prodigal_faa = f"{prefix_with_stem}prodigal/{stem}-prodigal.faa"
+        out_prodigal_db = f"{prefix_with_stem}prodigal/prodigal_db.tkn"
+        out_pfam = f"{prefix_with_stem}pfam/pfam.tsv"
+        out_pfam_db = f"{prefix_with_stem}pfam/pfam_db.tkn"
+        out_cog_tkn = f"{prefix_with_stem}cog/cog.tkn"
+        out_cog_classify = f"{prefix_with_stem}cog/cog_classify.tsv"
+        out_cog_count = f"{prefix_with_stem}cog/cog_count.tsv"
+        out_cog_db = f"{prefix_with_stem}cog/cog_db.tkn"
+        out_kofam = f"{prefix_with_stem}kofam/kofam.tsv"
+        out_kofam_db = f"{prefix_with_stem}kofam/kofam_db.tkn"
+        out_uniop = f"{prefix_with_stem}uniop/operons.tsv"
+        out_uniop_db = f"{prefix_with_stem}uniop/uniop_db.tkn"
+        out_dbcan = f"{prefix_with_stem}dbcan/overview.tsv"
+        out_dbcan_db = f"{prefix_with_stem}dbcan/dbcan_db.tkn"
 
         # Cache map - each tool includes ALL files (intermediates + token)
         # This ensures when we have a cache HIT, we restore everything Snakemake needs
